@@ -120,24 +120,81 @@ def fit(session, n_states=4, lag=10, features="ca_distances", epochs=200):
 
 
 def implied_timescales(model: VAMPnetModel, taus: List[int]):
-    """Implied-timescales test — refit MSMs at each tau, return timescales.
+    """Implied-timescales test — refit MSMs at each tau, return timescales
+    plus a convergence diagnostic.
 
-    Returns: {"taus": [int], "timescales": [[float, ...], ...]}
+    For a Markovian MSM, each implied timescale t_k(tau) is INDEPENDENT
+    of the chosen lag tau (within noise). In practice short lags
+    under-estimate t_k (non-Markovian gap) and longer lags converge to
+    the true value. The convergence score per mode is the relative
+    spread of t_k(tau) across the supplied taus.
+
+    Returns:
+      {"taus": [int],
+       "timescales": [[float, ...]],            # rows = taus, cols = modes
+       "converged": [bool],                     # per-mode (relative spread < 25%)
+       "convergence_score": [float],            # per-mode CV (std/mean) over taus
+       "recommended_lag": int}                  # smallest tau where all modes converged
     """
     import numpy as np
     from deeptime.markov.msm import MaximumLikelihoodMSM
 
     hard = np.asarray(model.state_assignments)
+    n_modes = model.n_states - 1
+
+    def _pad(row):
+        row = list(row)
+        if len(row) < n_modes:
+            row = row + [float("nan")] * (n_modes - len(row))
+        return row[:n_modes]
+
     out_ts = []
     for tau in taus:
         try:
             est = MaximumLikelihoodMSM(reversible=True, lagtime=int(tau))
             msm = est.fit_fetch(hard)
-            ts = msm.timescales(k=model.n_states - 1)
-            out_ts.append([float(t) for t in ts])
+            ts = msm.timescales(k=n_modes)
+            out_ts.append(_pad([float(t) for t in ts]))
         except Exception:
-            out_ts.append([float("nan")] * (model.n_states - 1))
-    return {"taus": [int(t) for t in taus], "timescales": out_ts}
+            out_ts.append([float("nan")] * n_modes)
+
+    arr = np.asarray(out_ts, dtype=float)              # (n_taus, n_modes)
+    # Strip rows that are entirely NaN (failed lags).
+    finite_mask = ~np.all(np.isnan(arr), axis=1)
+
+    if finite_mask.sum() < 2:
+        return {
+            "taus": [int(t) for t in taus],
+            "timescales": out_ts,
+            "converged": [False] * (model.n_states - 1),
+            "convergence_score": [float("nan")] * (model.n_states - 1),
+            "recommended_lag": int(model.lag),
+            "note": "insufficient successful lag-fits to diagnose convergence",
+        }
+
+    finite = arr[finite_mask]
+    means = np.nanmean(finite, axis=0)
+    stds = np.nanstd(finite, axis=0)
+    cv = stds / (np.abs(means) + 1e-9)                  # coefficient of variation
+    converged = [bool(c < 0.25) for c in cv]            # CV < 25% as convergence
+
+    # Smallest tau at which every mode satisfies (t(tau) - mean) < 25 % of mean.
+    rec = int(model.lag)
+    valid_taus = [int(t) for t, ok in zip(taus, finite_mask) if ok]
+    for i, tau in enumerate(valid_taus):
+        row = finite[i]
+        if np.all(np.abs(row - means) / (np.abs(means) + 1e-9) < 0.25):
+            rec = tau
+            break
+
+    return {
+        "taus": [int(t) for t in taus],
+        "timescales": out_ts,
+        "converged": converged,
+        "convergence_score": [float(c) for c in cv],
+        "mean_timescales": [float(m) for m in means],
+        "recommended_lag": rec,
+    }
 
 
 def save(model: VAMPnetModel, path: str) -> dict:
