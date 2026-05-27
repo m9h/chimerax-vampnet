@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+
+# Build artifacts
+build/
+dist/
+*.whl
+
+# Bundle build outputs
+src/version.py
+
+# MD data — too large for git, lives on /data
+md/*.pdb
+md/*.dcd
+md/*.npz
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp

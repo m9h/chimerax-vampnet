@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools", "ChimeraX-BundleBuilder"]
+build-backend = "chimerax.bundle_builder.cx_pep517"
+
+[project]
+name = "ChimeraX-VAMPnet"
+license = { text = "MIT" }
+authors = [{ name = "Morgan Hough" }]
+description = "Interactive Markov state modeling of protein conformational landscapes via VAMPnets on heterogeneous (MD + AlphaFlow + BioEmu) ensembles."
+dependencies = [
+  "ChimeraX-Core ~=1.10",
+  # deeptime ships VAMPnet + MSM machinery; PyTorch is already shipped with the ChimeraX AlphaFold bundle so we don't redeclare it.
+  "deeptime >=0.4",
+]
+dynamic = ["classifiers", "requires-python", "version"]
+
+[project.readme]
+content-type = "text"
+text = """chimerax-vampnet brings VAMPnets (Mardt et al. 2018) and Markov state modeling into
+the ChimeraX visualization environment. Load MD trajectories, AlphaFlow ensembles, or BioEmu
+samples; fit a VAMPnet; surface metastable states + transition rates as ChimeraX models,
+animations, and structured CLI output. Every command returns JSON-serializable data so an
+LLM agent driving ChimeraX via the MCP-server bundle can pilot an adaptive sampling loop.
+"""
+
+[project.urls]
+Home = "https://github.com/m9h/chimerax-vampnet"
+
+[tool.setuptools.dynamic]
+version = { attr = "src.__version__" }
+
+[tool.chimerax]
+min-session-version = 1
+max-session-version = 1
+categories = ["Molecular Dynamics", "Analysis"]
+classifiers = ["Development Status :: 2 - Pre-Alpha"]
+
+[tool.chimerax.command."vampnet fit"]
+category = "Molecular Dynamics"
+description = "Fit a VAMPnet on the active trajectory or loaded ensemble"
+
+[tool.chimerax.command."vampnet load_ensemble"]
+category = "Molecular Dynamics"
+description = "Load a conformational ensemble from MD trajectory, AlphaFlow, or BioEmu output"
+
+[tool.chimerax.command."vampnet timescales"]
+category = "Molecular Dynamics"
+description = "Compute and plot implied timescales as a function of lag"
+
+[tool.chimerax.command."vampnet states"]
+category = "Molecular Dynamics"
+description = "Color trajectory frames by their VAMPnet-assigned state"
+
+[tool.chimerax.command."vampnet means"]
+category = "Molecular Dynamics"
+description = "Build a per-state mean-structure model in the session"
+
+[tool.chimerax.command."vampnet animate"]
+category = "Molecular Dynamics"
+description = "Generate a smooth interpolation along a VAMPnet slow mode"
+
+[tool.chimerax.command."vampnet network"]
+category = "Molecular Dynamics"
+description = "Surface the transition matrix as a structured graph"
+
+[tool.chimerax.command."vampnet save"]
+category = "Molecular Dynamics"
+description = "Save the fitted VAMPnet model + MSM to disk"
+
+[tool.chimerax.command."vampnet load"]
+category = "Molecular Dynamics"
+description = "Load a previously saved VAMPnet model + MSM"
+
+[tool.chimerax.command."vampnet mcp serve"]
+category = "Molecular Dynamics"
+description = "Start the MCP bridge so MCP-capable LLM agents (Claude Desktop, Cursor, ...) can drive this bundle"
+
+[tool.chimerax.command."vampnet mcp stop"]
+category = "Molecular Dynamics"
+description = "Stop the MCP bridge"

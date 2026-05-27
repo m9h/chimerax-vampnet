@@ -1,0 +1,46 @@
+# chimerax-vampnet tutorial: full v0.1 walkthrough on the chignolin
+# CLN025 1 us trajectory.
+#
+# Prereqs:
+#   - chimerax-vampnet bundle installed (toolshed install . from this dir)
+#   - chignolin trajectory at /data/datasets/chimerax-vampnet/chignolin_modal/
+#     containing replica_0/traj.dcd + equilibrated.pdb
+#
+# Run inside ChimeraX:
+#   open chignolin_tutorial.cxc
+
+# 1. Load the equilibrated starting structure.
+open /data/datasets/chimerax-vampnet/chignolin_modal/chignolin/equilibrated.pdb
+
+# 2. Attach the MD trajectory as a coordset on top of it. The bundle's
+#    load_ensemble command handles this and adds the ensemble to the
+#    session-scoped registry so subsequent commands can see it.
+vampnet load_ensemble md /data/datasets/chimerax-vampnet/chignolin_modal/chignolin/replica_0/traj.dcd source md
+
+# 3. Fit the VAMPnet. 2 states is the natural folded/unfolded
+#    decomposition for CLN025; lag 100 frames (1 ns at our 10 ps stride)
+#    is enough to resolve the slow mode.
+vampnet fit nStates 2 lag 100 features ca_distances epochs 80
+
+# 4. Color the structure by state. As you scrub the coordslider, the
+#    structure recolors automatically (folded -> blue, unfolded -> orange
+#    in the default palette).
+vampnet states
+
+# 5. Build the per-state mean structures so you can visually compare
+#    folded vs unfolded in the same scene.
+vampnet means
+
+# 6. Render the slow mode as a synthetic animated trajectory.
+vampnet animate mode 1 nFrames 100
+
+# 7. Surface the MSM transition matrix as a structured graph.
+vampnet network
+
+# 8. (Optional) Persist the fitted model so a subsequent ChimeraX session
+#    can reload it without retraining.
+vampnet save ~/Downloads/chignolin_vampnet.pkl
+
+# 9. (Optional) Start the HTTP/MCP bridge so an external LLM agent can
+#    drive future bundle commands programmatically.
+vampnet mcp serve port 7345
