@@ -15,7 +15,7 @@ open /data/datasets/chimerax-vampnet/chignolin_modal/chignolin/equilibrated.pdb
 # 2. Attach the MD trajectory as a coordset on top of it. The bundle's
 #    load_ensemble command handles this and adds the ensemble to the
 #    session-scoped registry so subsequent commands can see it.
-vampnet load_ensemble md /data/datasets/chimerax-vampnet/chignolin_modal/chignolin/replica_0/traj.dcd source md
+vampnet load_ensemble md /data/datasets/chimerax-vampnet/chignolin_modal/chignolin/replica_0/traj.dcd
 
 # 3. Fit the VAMPnet. 2 states is the natural folded/unfolded
 #    decomposition for CLN025; lag 100 frames (1 ns at our 10 ps stride)

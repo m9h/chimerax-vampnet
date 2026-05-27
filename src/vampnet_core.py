@@ -39,6 +39,34 @@ class VAMPnetModel:
         }
 
 
+def _restrict_to_ca(session, coords):
+    """Subset full-atom coords (N, A_total, 3) to CA atoms only.
+
+    Looks at the first MD-loaded structure in the session registry; if
+    that structure exposes atom names, returns coords[:, ca_indices, :].
+    For ensembles loaded from AlphaFlow / BioEmu .npz (no ChimeraX
+    structure available), the file is assumed to already hold CA-only
+    or backbone-equivalent coordinates and is returned unchanged.
+    """
+    try:
+        from . import featurize
+    except ImportError:
+        import featurize  # type: ignore
+    import numpy as np
+
+    regs = featurize._registry(session)
+    md_regs = [r for r in regs if r.get("format") == "md" and r.get("structure") is not None]
+    if not md_regs:
+        return coords
+
+    structure = md_regs[0]["structure"]
+    atom_names = [a.name for a in structure.atoms]
+    ca_idx = np.array([i for i, n in enumerate(atom_names) if n == "CA"], dtype=np.int64)
+    if ca_idx.size == 0:
+        return coords
+    return coords[:, ca_idx, :]
+
+
 def fit(session, n_states=4, lag=10, features="ca_distances", epochs=200):
     """Fit a VAMPnet on the union of loaded ensembles."""
     from . import featurize
@@ -46,7 +74,8 @@ def fit(session, n_states=4, lag=10, features="ca_distances", epochs=200):
     coords, sources = featurize.stacked_coords(session)
 
     if features == "ca_distances":
-        X = featurize.featurize_ca_distances(coords)
+        coords_ca = _restrict_to_ca(session, coords)
+        X = featurize.featurize_ca_distances(coords_ca)
     elif features == "torsions":
         # Pull the backbone torsion quad set from the first loaded structure.
         regs = featurize._registry(session)

@@ -1,0 +1,42 @@
+# Development image for chimerax-vampnet: stock ChimeraX arm64 +
+# build tools + deeptime preinstalled (no Linux arm64 wheel exists on
+# PyPI as of deeptime 0.4.5, so we build from source).
+#
+# Two ChimeraX-specific traps we work around:
+#   1. HOME=/do/not/run/as/root makes ChimeraX's Python refuse to start
+#      during the pip install. Override HOME during build.
+#   2. ChimeraX bundles its own `cython` shim that wraps ChimeraX init;
+#      deeptime's CMake calls cython --version which makes ChimeraX
+#      spin up and crash. Rename the shim so CMake falls back to the
+#      cython that pip's build-isolation env installs cleanly.
+
+FROM ucsfrbvi/chimerax:latest-arm64
+
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc g++ make cmake ninja-build pkg-config \
+        python3-dev libblas-dev liblapack-dev libopenblas-dev \
+        gfortran \
+    && rm -rf /var/lib/apt/lists/*
+
+# Hide ChimeraX's cython shim so deeptime's CMake finds the build-env
+# cython instead.
+RUN mv /opt/UCSF/ChimeraX.app/bin/cython /opt/UCSF/ChimeraX.app/bin/cython.cx-shim.hidden
+
+ENV HOME=/tmp/build-home
+RUN mkdir -p /tmp/build-home
+
+RUN /opt/UCSF/ChimeraX.app/bin/python3.11 -m pip install --no-cache-dir \
+        torch --index-url https://download.pytorch.org/whl/cpu
+
+RUN /opt/UCSF/ChimeraX.app/bin/python3.11 -m pip install --no-cache-dir deeptime
+
+RUN /opt/UCSF/ChimeraX.app/bin/python3.11 -c \
+        "import torch, deeptime; print('torch', torch.__version__, 'deeptime', deeptime.__version__)"
+
+# Restore the cython shim so we don't break any other tool that
+# expects it at the original path.
+RUN mv /opt/UCSF/ChimeraX.app/bin/cython.cx-shim.hidden /opt/UCSF/ChimeraX.app/bin/cython
+
+ENV HOME=/do/not/run/as/root
+USER 1000:1000

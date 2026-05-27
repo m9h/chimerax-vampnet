@@ -68,13 +68,15 @@ def slow_mode_animation(session, model, mode: int = 1, n_frames: int = 100) -> d
     new_structure = viz._clone_structure_with_coords(session, parent, low_mean,
                                                       name=f"vampnet_animation_mode{mode}")
     # The first coordset is already the low endpoint; add n_frames-1 more.
+    # ChimeraX's add_coordset takes a single float64 xyz array; older
+    # signatures took (id, xyz) — we try the modern path first.
     for i in range(1, n_frames):
         t = i / (n_frames - 1)
-        interp = (1 - t) * low_mean + t * high_mean
+        interp = ((1 - t) * low_mean + t * high_mean).astype(np.float64)
         try:
-            new_structure.add_coordset(i + 1, interp.astype(np.float32))
-        except Exception:
-            new_structure.add_coordset(interp.astype(np.float32))
+            new_structure.add_coordset(interp)
+        except TypeError:
+            new_structure.add_coordset(i + 1, interp)
 
     session.models.add([new_structure])
 
