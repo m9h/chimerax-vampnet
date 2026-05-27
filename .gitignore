@@ -19,6 +19,10 @@ md/*.pdb
 md/*.dcd
 md/*.npz
 
+# Docker container runtime cache (CUDA shader cache etc)
+md/.containerhome/
+.containerhome/
+
 # Editor / OS
 .DS_Store
 .vscode/
