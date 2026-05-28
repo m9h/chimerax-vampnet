@@ -1,7 +1,19 @@
 """Tiny helper to extract a chain subset from a PDB before passing to prep.py.
 
+Apo Notch1 NRR (3I08) -- chain A (NEC, residues 1449-1622) + chain B
+(NTM, 1670-1729) are the NRR:
+
   python filter_chains.py 3i08.pdb 3i08_apo.pdb A B
-  python filter_chains.py 3l95.pdb 3l95_holo.pdb A B H L
+
+Holo Notch1 NRR + anti-NRR Fab (3L95) -- the ASU is a 2:2 NRR:Fab dimer.
+The NRR is in chains X (residues 1447-1727) and Y (1461-1726); the Fab
+heavy chains are B/H and light chains are A/L. Keep one NRR copy + one
+Fab pair:
+
+  python filter_chains.py 3l95.pdb 3l95_holo.pdb X H L
+
+NOT `A B H L` (those are all Fab; the original holo run drained ~$140
+of Modal MD on two Fab antibodies floating in water).
 """
 
 from __future__ import annotations

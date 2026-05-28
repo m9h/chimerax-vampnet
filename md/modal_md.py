@@ -72,11 +72,14 @@ PYTHON = "/opt/conda/envs/md/bin/python"
 )
 def prep_remote(system: str, pdb_bytes: bytes, padding_nm: float = 1.0,
                  temperature_K: float = 310.0, ionic_strength: float = 0.15,
-                 dt_fs: float = 4.0, hmr_amu: float = 4.0):
+                 dt_fs: float = 4.0, hmr_amu: float = 4.0,
+                 anchor_chain_tails: list[str] | None = None):
     """Run prep.py on Modal. Writes prepared/<system>/ on the volume.
 
     pdb_bytes: raw bytes of the input PDB. Pushed by the launcher so we
     don't depend on the user having pre-populated the volume.
+    anchor_chain_tails: list of "CHAIN:N" strings forwarded to prep.py's
+    --anchor-chain-tail (e.g. ["B:5"] for apo NRR, ["X:5"] for holo).
     """
     import subprocess
     import sys
@@ -95,6 +98,8 @@ def prep_remote(system: str, pdb_bytes: bytes, padding_nm: float = 1.0,
            "--temperature", str(temperature_K),
            "--dt-fs", str(dt_fs),
            "--hmr-amu", str(hmr_amu)]
+    for spec in (anchor_chain_tails or []):
+        cmd += ["--anchor-chain-tail", spec]
     print(f"[modal.prep] {' '.join(cmd)}")
     sys.stdout.flush()
     r = subprocess.run(cmd, check=True)
@@ -144,15 +149,23 @@ def produce_remote(system: str, replica: int, ns: float = 100.0,
 @app.local_entrypoint()
 def prep(system: str, pdb: str, padding_nm: float = 1.0,
          temperature: float = 310.0, ionic_strength: float = 0.15,
-         dt_fs: float = 4.0, hmr_amu: float = 4.0):
-    """Upload a local PDB to Modal and run prep on it."""
+         dt_fs: float = 4.0, hmr_amu: float = 4.0,
+         anchor: str = ""):
+    """Upload a local PDB to Modal and run prep on it.
+
+    anchor: comma-separated CHAIN:N specs forwarded to prep.py's
+    --anchor-chain-tail. Example: anchor="B:5" for apo, "X:5" for holo.
+    """
     pdb_bytes = Path(pdb).read_bytes()
-    print(f"[local] uploading {len(pdb_bytes)} bytes for system={system}")
+    anchor_chain_tails = [s for s in anchor.split(",") if s]
+    print(f"[local] uploading {len(pdb_bytes)} bytes for system={system}"
+          + (f"  anchors={anchor_chain_tails}" if anchor_chain_tails else ""))
     result = prep_remote.remote(system, pdb_bytes,
                                  padding_nm=padding_nm,
                                  temperature_K=temperature,
                                  ionic_strength=ionic_strength,
-                                 dt_fs=dt_fs, hmr_amu=hmr_amu)
+                                 dt_fs=dt_fs, hmr_amu=hmr_amu,
+                                 anchor_chain_tails=anchor_chain_tails)
     print(f"[local] prep done: {result}")
 
 

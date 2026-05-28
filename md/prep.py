@@ -23,15 +23,50 @@ import os
 import sys
 from pathlib import Path
 
-from openmm import app, unit, LangevinIntegrator, MonteCarloBarostat, Platform, XmlSerializer
+from openmm import app, unit, CustomExternalForce, LangevinIntegrator, MonteCarloBarostat, Platform, XmlSerializer
 from openmm import Vec3
 from pdbfixer import PDBFixer
+
+
+def _add_anchor_restraints(system, topology, positions, anchor_specs,
+                            k_kj_per_nm2: float = 10000.0):
+    """Apply harmonic positional restraints to the CA atoms of the last
+    `n_tail` residues of each named input chain.
+
+    Used to compensate for the missing transmembrane anchor on Notch1
+    NRR's NTM region: holds the C-terminal residues near their
+    equilibrated position so the LNR/HD interface samples its native
+    dynamics rather than dissociating into solvent. 10000 kJ/mol/nm^2
+    is moderate (~6 kcal/mol/A^2) -- stiff enough to anchor, soft
+    enough to permit thermal motion.
+    """
+    if not anchor_specs:
+        return 0
+    force = CustomExternalForce("0.5*k*((x-x0)^2 + (y-y0)^2 + (z-z0)^2)")
+    force.addGlobalParameter("k", k_kj_per_nm2 * unit.kilojoule_per_mole / unit.nanometer ** 2)
+    for name in ("x0", "y0", "z0"):
+        force.addPerParticleParameter(name)
+    n_added = 0
+    for chain in topology.chains():
+        for chain_id, n_tail in anchor_specs:
+            if chain.id != chain_id:
+                continue
+            residues = list(chain.residues())
+            for res in residues[-n_tail:]:
+                for atom in res.atoms():
+                    if atom.name == "CA":
+                        p = positions[atom.index]
+                        force.addParticle(atom.index, [p.x, p.y, p.z])
+                        n_added += 1
+    system.addForce(force)
+    return n_added
 
 
 def prepare_system(pdb_in: Path, out_dir: Path, padding_nm: float = 1.0,
                    ionic_strength_M: float = 0.15, temperature_K: float = 310.0,
                    ph: float = 7.4, ff: str = "amber14", dt_fs: float = 4.0,
-                   hmr_amu: float = 4.0):
+                   hmr_amu: float = 4.0,
+                   anchor_specs: list | None = None):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[prep] fixing {pdb_in} -> {out_dir}/fixed.pdb")
@@ -79,6 +114,12 @@ def prepare_system(pdb_in: Path, out_dir: Path, padding_nm: float = 1.0,
         rigidWater=True,
         hydrogenMass=hmr_amu * unit.amu,  # HMR; with 4 amu safe to integrate at 4 fs
     )
+
+    n_anchored = _add_anchor_restraints(system, modeller.topology,
+                                          modeller.positions, anchor_specs or [])
+    if n_anchored:
+        print(f"[prep] applied positional restraints to {n_anchored} anchor CAs "
+              f"(specs={anchor_specs})")
 
     print("[prep] energy minimization")
     integrator = LangevinIntegrator(temperature_K * unit.kelvin, 1.0 / unit.picosecond, dt_fs * unit.femtosecond)
@@ -136,14 +177,30 @@ def main():
                    help="Integrator timestep in fs. 4 fs requires HMR=4 amu.")
     p.add_argument("--hmr-amu", type=float, default=4.0,
                    help="Hydrogen mass for HMR. 4 amu allows safe 4 fs integration.")
+    p.add_argument("--anchor-chain-tail", action="append", default=[],
+                   metavar="CHAIN:N",
+                   help="Apply harmonic positional restraints to the CA atoms of "
+                        "the last N residues of input-PDB chain CHAIN. Use one "
+                        "flag per chain. Compensates for missing transmembrane "
+                        "anchors on partial structures (e.g. Notch1 NRR NTM). "
+                        "Example: --anchor-chain-tail B:5 --anchor-chain-tail X:5")
     args = p.parse_args()
+
+    anchor_specs = []
+    for spec in args.anchor_chain_tail:
+        if ":" not in spec:
+            p.error(f"--anchor-chain-tail expects CHAIN:N, got {spec!r}")
+        ch, n = spec.split(":", 1)
+        anchor_specs.append((ch, int(n)))
+
     prepare_system(args.pdb_in, args.out_dir,
                    padding_nm=args.padding_nm,
                    ionic_strength_M=args.ionic_strength,
                    temperature_K=args.temperature,
                    ph=args.ph,
                    dt_fs=args.dt_fs,
-                   hmr_amu=args.hmr_amu)
+                   hmr_amu=args.hmr_amu,
+                   anchor_specs=anchor_specs)
 
 
 if __name__ == "__main__":
