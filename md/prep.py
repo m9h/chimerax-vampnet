@@ -66,18 +66,30 @@ def prepare_system(pdb_in: Path, out_dir: Path, padding_nm: float = 1.0,
                    ionic_strength_M: float = 0.15, temperature_K: float = 310.0,
                    ph: float = 7.4, ff: str = "amber14", dt_fs: float = 4.0,
                    hmr_amu: float = 4.0,
-                   anchor_specs: list | None = None):
+                   anchor_specs: list | None = None,
+                   max_internal_gap: int = 10):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[prep] fixing {pdb_in} -> {out_dir}/fixed.pdb")
     fixer = PDBFixer(filename=str(pdb_in))
     fixer.findMissingResidues()
-    # Drop terminal missing residues to avoid building artificial chain ends.
+    # Drop (a) terminal missing residues (would build artificial chain ends)
+    # and (b) internal gaps longer than max_internal_gap (de novo modeling of
+    # long disordered loops at protein interfaces clashes with bound partners
+    # and blows up NVT). The Notch1 NRR's S1 cleavage loop is the canonical
+    # case: residues 1622-1670 are unresolved in 3L95 because they're the
+    # disordered S1 cleavage site; modeling 48 de novo residues against the
+    # bound anti-NRR Fab caused NVT to NaN.
     keys = list(fixer.missingResidues.keys())
     for key in keys:
         chain = list(fixer.topology.chains())[key[0]]
         n_res = sum(1 for _ in chain.residues())
+        gap_len = len(fixer.missingResidues[key])
         if key[1] == 0 or key[1] == n_res:
+            del fixer.missingResidues[key]
+        elif gap_len > max_internal_gap:
+            print(f"[prep]   dropping internal {gap_len}-residue gap in chain "
+                  f"{chain.id} at insertion {key[1]}; will leave as chain break")
             del fixer.missingResidues[key]
     fixer.findNonstandardResidues()
     fixer.replaceNonstandardResidues()
@@ -184,6 +196,11 @@ def main():
                         "flag per chain. Compensates for missing transmembrane "
                         "anchors on partial structures (e.g. Notch1 NRR NTM). "
                         "Example: --anchor-chain-tail B:5 --anchor-chain-tail X:5")
+    p.add_argument("--max-internal-gap", type=int, default=10,
+                   help="Skip de novo modeling of internal missing-residue gaps "
+                        "longer than this. Long disordered loops at interfaces "
+                        "clash with bound partners and blow up NVT (Notch1 NRR's "
+                        "48-residue S1 cleavage gap in 3L95 is the canonical case).")
     args = p.parse_args()
 
     anchor_specs = []
@@ -200,7 +217,8 @@ def main():
                    ph=args.ph,
                    dt_fs=args.dt_fs,
                    hmr_amu=args.hmr_amu,
-                   anchor_specs=anchor_specs)
+                   anchor_specs=anchor_specs,
+                   max_internal_gap=args.max_internal_gap)
 
 
 if __name__ == "__main__":
