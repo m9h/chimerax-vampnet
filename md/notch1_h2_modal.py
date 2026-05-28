@@ -260,14 +260,16 @@ def _analyze_one(system_dir, n_replicas, frame_stride, n_states, lag, epochs,
 
 
 @app.function(cpu=8, memory=49152, timeout=3600, volumes={"/vol": vol})
-def analyze_remote(n_states: int = 4, lag: int = 50, epochs: int = 60,
+def analyze_remote(apo_system: str = "notch1_apo_v2",
+                    holo_system: str = "notch1_holo_v2",
+                    n_states: int = 4, lag: int = 50, epochs: int = 60,
                     frame_stride: int = 5, n_replicas: int = 3,
                     ps_per_dcd_frame: float = 20.0):
     """Run the H2 apo-vs-holo analysis on the Modal volume."""
     base = Path("/vol/prepared")
-    apo  = _analyze_one(base / "notch1_apo",  n_replicas, frame_stride,
+    apo  = _analyze_one(base / apo_system,  n_replicas, frame_stride,
                         n_states, lag, epochs, ps_per_dcd_frame)
-    holo = _analyze_one(base / "notch1_holo", n_replicas, frame_stride,
+    holo = _analyze_one(base / holo_system, n_replicas, frame_stride,
                         n_states, lag, epochs, ps_per_dcd_frame)
 
     # H2 verdict.
@@ -308,8 +310,13 @@ def analyze_remote(n_states: int = 4, lag: int = 50, epochs: int = 60,
 
 
 @app.local_entrypoint()
-def analyze(n_states: int = 4, lag: int = 50, epochs: int = 60):
-    result = analyze_remote.remote(n_states=n_states, lag=lag, epochs=epochs)
-    out = Path(__file__).parent / "notch1_h2_results.json"
-    out.write_text(json.dumps(result, indent=2))
-    print(f"\n[local] wrote {out}")
+def analyze(apo_system: str = "notch1_apo_v2",
+            holo_system: str = "notch1_holo_v2",
+            n_states: int = 4, lag: int = 50, epochs: int = 60,
+            out: str = "notch1_h2_results.json"):
+    result = analyze_remote.remote(
+        apo_system=apo_system, holo_system=holo_system,
+        n_states=n_states, lag=lag, epochs=epochs)
+    out_path = Path(__file__).parent / out
+    out_path.write_text(json.dumps(result, indent=2))
+    print(f"\n[local] wrote {out_path}")

@@ -29,16 +29,20 @@ from pdbfixer import PDBFixer
 
 
 def _add_anchor_restraints(system, topology, positions, anchor_specs,
-                            k_kj_per_nm2: float = 10000.0):
+                            k_kj_per_nm2: float = 1000.0):
     """Apply harmonic positional restraints to the CA atoms of the last
     `n_tail` residues of each named input chain.
 
     Used to compensate for the missing transmembrane anchor on Notch1
     NRR's NTM region: holds the C-terminal residues near their
     equilibrated position so the LNR/HD interface samples its native
-    dynamics rather than dissociating into solvent. 10000 kJ/mol/nm^2
-    is moderate (~6 kcal/mol/A^2) -- stiff enough to anchor, soft
-    enough to permit thermal motion.
+    dynamics rather than dissociating into solvent. 1000 kJ/mol/nm^2
+    (~2.4 kcal/mol/A^2) is the standard heavy-atom-positional-restraint
+    strength used in equilibration protocols -- stiff enough to anchor,
+    soft enough to remain stable through aggressive NVT at HMR=4 fs.
+    A previous value of 10000 succeeded on the apo NRR (234 CAs solvated
+    box) but caused NaN at NVT step 0 on the larger holo system
+    (661 CAs + Fab + larger solvent box).
     """
     if not anchor_specs:
         return 0
@@ -55,8 +59,10 @@ def _add_anchor_restraints(system, topology, positions, anchor_specs,
             for res in residues[-n_tail:]:
                 for atom in res.atoms():
                     if atom.name == "CA":
-                        p = positions[atom.index]
-                        force.addParticle(atom.index, [p.x, p.y, p.z])
+                        # Explicitly extract raw nm to avoid Quantity vs float
+                        # ambiguity in CustomExternalForce per-particle args.
+                        p = positions[atom.index].value_in_unit(unit.nanometer)
+                        force.addParticle(atom.index, [float(p.x), float(p.y), float(p.z)])
                         n_added += 1
     system.addForce(force)
     return n_added
