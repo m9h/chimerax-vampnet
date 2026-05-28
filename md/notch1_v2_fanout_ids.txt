@@ -1,0 +1,16 @@
+# Notch1 NRR v0.2 production fanout (3x100 ns apo + 3x100 ns holo)
+# Launched 2026-05-28, A100-80GB, k=1000 NTM-anchor restraint.
+
+apo_v2 replica 0: fc-01KSR9J5RVGPMA9ZSNZ2Q864EB
+apo_v2 replica 1: fc-01KSR9J5XM15V11RHT8CXSVK73
+apo_v2 replica 2: fc-01KSR9J61RHTM4H81FDME1JNJ6
+
+holo_v2 replica 0: fc-01KSR9J5QVDG2NNS92R7NW9RGB
+holo_v2 replica 1: fc-01KSR9J5VYJPZXSZ10RZQYTDS6
+holo_v2 replica 2: fc-01KSR9J6188TF4ZTRCP8Q7VDX0
+
+# Inspect with:
+#   modal call logs <fc-id>
+# Volume targets (where DCDs land):
+#   /vol/prepared/notch1_apo_v2/replica_{0,1,2}/traj.dcd
+#   /vol/prepared/notch1_holo_v2/replica_{0,1,2}/traj.dcd

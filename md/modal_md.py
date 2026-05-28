@@ -108,7 +108,7 @@ def prep_remote(system: str, pdb_bytes: bytes, padding_nm: float = 1.0,
 
 
 @app.function(
-    gpu="H100",
+    gpu="A100-80GB",
     timeout=24 * 3600,
     volumes={VOL_MOUNT: vol},
 )
