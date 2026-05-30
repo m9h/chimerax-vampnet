@@ -11,9 +11,9 @@ Every command returns JSON-serializable data so an MCP-capable LLM
 agent (Claude Desktop, Cursor, etc.) can drive an adaptive analysis
 loop via the included HTTP bridge.
 
-## Status — v0.1 pre-alpha
+## Status — v0.2
 
-**1184 LOC across 8 modules, 4/4 tests green.**
+**1184 LOC across 8 modules, 18/18 tests green.**
 
 | Module | Lines | Status |
 |---|---:|---|
@@ -32,7 +32,21 @@ loop via the included HTTP bridge.
 - **Tier-1 (chignolin CLN025)**: self-generated 1 µs trajectory at 340 K on Modal H100, 4 fs HMR, $37. Bundle recovers:
   - Slowest implied timescale **166 ns** (published reference: 100-500 ns)
   - Clean folded vs unfolded state separation (Trp9-Tyr1 5.7 vs 15.6 Å)
-- **Tier-2 (Notch1 NRR apo + holo)**: ran on Modal H100 (~$65 spent). Apo pipeline ran end-to-end. Holo had a chain-selection bug (filtered wrong chains from 3L95) — re-prep needed for a real apo/holo comparison. Bundle's *analysis* pipeline is uninvolved in the bug; it's an MD-prep issue.
+- **Tier-2 (Notch1 NRR apo + holo, v0.2)**: apo + corrected-chain holo
+  trajectories (3×100 ns each, Modal A100-80GB). v0.2 H2 analysis
+  finds the directional prediction **met** (apo 21.6% vs holo 17.9%
+  auto-inhibited, Δ = +3.7 pp) but the pre-registered magnitudes
+  (apo ≥ 50%, holo ≤ 30%) **not met** because both systems undergo
+  NRR-fragment dissociation across 100 ns without a working
+  transmembrane-anchor restraint. Full diagnostic: `md/notch1_h2_results.md`.
+- **Wider robustness (ATLAS sweep)**: 4 public ATLAS trajectories
+  spanning all-α / mostly-β / mixed / large-α folds and 73-518
+  residues, all converge to non-degenerate 4-state decompositions
+  with 38-75 ns slow timescales. See `md/wider_atlas_results.md`.
+- **LLM-agent adaptive sampling demo**: `examples/adaptive_sampling_demo.py`
+  on the chignolin trajectory grows the slowest implied timescale
+  from 94 → 201 ns (2.1× improvement) via rare-state-targeted
+  re-sampling, exercising the MCP-stdio proxy end-to-end.
 
 ## Commands
 
@@ -130,17 +144,32 @@ Modal cloud commands.
 
 ## Roadmap
 
-**v0.2:**
-- Residue-number-based chain identification (survives PDBFixer renumbering)
-- Positional restraints for membrane-anchored proteins (e.g., Notch1 NRR)
-- MCP-stdio proxy script for Claude Desktop integration
-- Implied-timescales convergence test integrated into `vampnet timescales`
-- Direct AlphaFlow + BioEmu ensemble fetch from HuggingFace
+**v0.2 (shipped):**
+- ✅ MCP-stdio proxy for Claude Desktop / Cursor / Continue
+- ✅ Implied-timescales convergence test in `vampnet timescales`
+- ✅ Corrected-chain Notch1 holo prep + 3×100 ns A100-80GB MD
+- ✅ H2 analysis: direction met (+3.7 pp), magnitudes pending
+- ✅ Wider ATLAS robustness sweep (4 proteins, 4 folds)
+- ✅ LLM-agent adaptive-sampling demonstration (2.1× slow IT growth)
 
 **v0.3:**
-- Multi-source joint VAMPNet (MD + AlphaFlow + BioEmu fused embedding)
-- Gibbs energy landscape rendering in ChimeraX
-- Adaptive sampling loop via MCP (LLM agent selects which states to extend MD on)
+- Working transmembrane-anchor restraint (capture positions
+  post-NPT; previous attempt NaN'd at production — see
+  `md/notch1_h2_results.md`). Re-run apo+holo, expect magnitudes
+  to recover.
+- Bootstrap uncertainty on H2 populations (deeptime MSM bootstrap).
+- Real AlphaFlow + BioEmu inference on Modal — `md/alphaflow_modal.py`
+  is the draft Modal app — and `vampnet ensemble fetch` CLI verb.
+- Multi-source joint VAMPNet with per-source covariance weighting +
+  stratified state-coverage report (test H3: "which states does
+  AlphaFlow reach that 100 ns MD does not?").
+- Live MCP-driven adaptive sampling on Notch1: wire the demo loop to
+  actual Modal MD launches seeded from `vampnet means` outputs.
+
+**Stretch (v0.4+):**
+- Gibbs energy landscape rendering inside ChimeraX
+- MACE-OFF neural-network potentials in the MD backend
+- DiffDock pose-stability teaching demo
 
 ## License
 
