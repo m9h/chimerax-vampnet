@@ -48,9 +48,9 @@ def _state_set(session, model):
 def cmd_load_ensemble(session, source, path, format="auto"):
     """Load a conformational ensemble into the session.
 
-    source: human-readable label ("md_apo", "alphaflow", "bioemu", etc.)
+    source: human-readable label ("md_apo", "alphaflow", "bioemu", "marsfm", etc.)
     path:   filesystem path to a trajectory or ensemble file
-    format: one of "auto", "alphaflow", "bioemu", "md"
+    format: one of "auto", "alphaflow", "bioemu", "marsfm", "md"
 
     Returns: {"source": str, "n_frames": int, "format_detected": str}
     """
@@ -188,7 +188,7 @@ def cmd_mcp_stop(session):
 # ----------------------------------------------------------------------
 _DESC_LOAD_ENSEMBLE = CmdDesc(
     required=[("source", StringArg), ("path", OpenFileNameArg)],
-    keyword=[("format", EnumOf(["auto", "alphaflow", "bioemu", "md"]))],
+    keyword=[("format", EnumOf(["auto", "alphaflow", "bioemu", "marsfm", "md"]))],
     synopsis="Load a conformational ensemble",
 )
 

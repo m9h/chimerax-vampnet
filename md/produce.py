@@ -18,7 +18,67 @@ import sys
 import time
 from pathlib import Path
 
-from openmm import app, unit, Platform, XmlSerializer
+from openmm import app, unit, CustomCentroidBondForce, Platform, XmlSerializer
+
+
+def _chain_ca_indices(topology, chain_id):
+    idx = []
+    for chain in topology.chains():
+        if chain.id != chain_id:
+            continue
+        for res in chain.residues():
+            for atom in res.atoms():
+                if atom.name == "CA":
+                    idx.append(atom.index)
+    return idx
+
+
+def _compute_com_distance_nm(positions, indices_a, indices_b):
+    import math
+    sxa = sya = sza = sxb = syb = szb = 0.0
+    for i in indices_a:
+        p = positions[i]
+        try:
+            p = p.value_in_unit(unit.nanometer)
+        except AttributeError:
+            pass
+        sxa += p.x; sya += p.y; sza += p.z
+    for i in indices_b:
+        p = positions[i]
+        try:
+            p = p.value_in_unit(unit.nanometer)
+        except AttributeError:
+            pass
+        sxb += p.x; syb += p.y; szb += p.z
+    na, nb = len(indices_a), len(indices_b)
+    dx = sxa/na - sxb/nb; dy = sya/na - syb/nb; dz = sza/na - szb/nb
+    return math.sqrt(dx*dx + dy*dy + dz*dz)
+
+
+def _apply_com_distance_restraint(system, topology, positions,
+                                    chain_a_index: int, chain_b_index: int,
+                                    k_kj_per_nm2: float = 100.0):
+    """Re-apply CustomCentroidBondForce restraint on |COM(g1) - COM(g2)|
+    using the current loaded positions to fix r0. Identifies the two
+    chains by INDEX in topology iteration order (robust to PDBFixer
+    renames between prep and produce)."""
+    chains = list(topology.chains())
+    a_idx = [a.index for a in chains[chain_a_index].atoms() if a.name == "CA"]
+    b_idx = [a.index for a in chains[chain_b_index].atoms() if a.name == "CA"]
+    if not a_idx or not b_idx:
+        raise ValueError(f"no CAs at chain indices {chain_a_index}/{chain_b_index}")
+    r0 = _compute_com_distance_nm(positions, a_idx, b_idx)
+    force = CustomCentroidBondForce(2, "0.5*k*(distance(g1, g2) - r0)^2")
+    force.addPerBondParameter("k")
+    force.addPerBondParameter("r0")
+    force.addGroup(a_idx)
+    force.addGroup(b_idx)
+    force.addBond([0, 1], [
+        k_kj_per_nm2 * unit.kilojoule_per_mole / unit.nanometer ** 2,
+        r0 * unit.nanometer,
+    ])
+    system.addForce(force)
+    return r0, len(a_idx), len(b_idx)
 
 
 def produce(prepared_dir: Path, replica: int, steps: int = 50_000_000,
@@ -34,6 +94,27 @@ def produce(prepared_dir: Path, replica: int, steps: int = 50_000_000,
         integrator = XmlSerializer.deserialize(f.read())
 
     pdb = app.PDBFile(str(prepared_dir / "equilibrated.pdb"))
+
+    # If prep saved an anchor_specs.json, re-apply the COM-distance
+    # restraint fresh using positions from state.xml. r0 is recomputed
+    # from these exact positions so the initial restraint force is 0.
+    anchor_specs_path = prepared_dir / "anchor_specs.json"
+    if anchor_specs_path.exists():
+        import json
+        spec = json.loads(anchor_specs_path.read_text())
+        if spec.get("type") != "com_distance":
+            raise ValueError(f"unknown anchor spec type: {spec.get('type')!r}")
+        with open(prepared_dir / "state.xml") as f:
+            _state_for_anchor = XmlSerializer.deserialize(f.read())
+        r0, na, nb = _apply_com_distance_restraint(
+            system, pdb.topology, _state_for_anchor.getPositions(),
+            int(spec["chain_a_index"]), int(spec["chain_b_index"]),
+            k_kj_per_nm2=float(spec.get("k_kj_per_nm2", 100.0)))
+        print(f"[produce] re-applied COM-distance restraint: "
+              f"chain idx {spec['chain_a_index']}({na} CAs) <-> "
+              f"chain idx {spec['chain_b_index']}({nb} CAs), "
+              f"r0={r0*10:.2f} A, k={spec.get('k_kj_per_nm2', 100.0)} kJ/mol/nm^2")
+
     platform = _select_platform()
     simulation = app.Simulation(pdb.topology, system, integrator, platform)
 

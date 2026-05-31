@@ -73,13 +73,14 @@ PYTHON = "/opt/conda/envs/md/bin/python"
 def prep_remote(system: str, pdb_bytes: bytes, padding_nm: float = 1.0,
                  temperature_K: float = 310.0, ionic_strength: float = 0.15,
                  dt_fs: float = 4.0, hmr_amu: float = 4.0,
-                 anchor_chain_tails: list[str] | None = None):
+                 com_restrain: str | None = None,
+                 com_restrain_k: float = 100.0):
     """Run prep.py on Modal. Writes prepared/<system>/ on the volume.
 
     pdb_bytes: raw bytes of the input PDB. Pushed by the launcher so we
     don't depend on the user having pre-populated the volume.
-    anchor_chain_tails: list of "CHAIN:N" strings forwarded to prep.py's
-    --anchor-chain-tail (e.g. ["B:5"] for apo NRR, ["X:5"] for holo).
+    com_restrain: "CHAIN_A:CHAIN_B" string forwarded to prep.py's
+    --com-restrain (e.g. "A:B" for Notch1 NRR NEC<->NTM).
     """
     import subprocess
     import sys
@@ -98,8 +99,9 @@ def prep_remote(system: str, pdb_bytes: bytes, padding_nm: float = 1.0,
            "--temperature", str(temperature_K),
            "--dt-fs", str(dt_fs),
            "--hmr-amu", str(hmr_amu)]
-    for spec in (anchor_chain_tails or []):
-        cmd += ["--anchor-chain-tail", spec]
+    if com_restrain:
+        cmd += ["--com-restrain", com_restrain,
+                "--com-restrain-k", str(com_restrain_k)]
     print(f"[modal.prep] {' '.join(cmd)}")
     sys.stdout.flush()
     r = subprocess.run(cmd, check=True)
@@ -150,22 +152,24 @@ def produce_remote(system: str, replica: int, ns: float = 100.0,
 def prep(system: str, pdb: str, padding_nm: float = 1.0,
          temperature: float = 310.0, ionic_strength: float = 0.15,
          dt_fs: float = 4.0, hmr_amu: float = 4.0,
-         anchor: str = ""):
+         com_restrain: str = "", com_restrain_k: float = 100.0):
     """Upload a local PDB to Modal and run prep on it.
 
-    anchor: comma-separated CHAIN:N specs forwarded to prep.py's
-    --anchor-chain-tail. Example: anchor="B:5" for apo, "X:5" for holo.
+    com_restrain: "CHAIN_A:CHAIN_B" passed to prep.py's --com-restrain.
+    Example: com_restrain="A:B" for Notch1 NRR NEC<->NTM COM-distance
+    restraint (chain IDs of the equilibrated PDB, after PDBFixer
+    renumbers them).
     """
     pdb_bytes = Path(pdb).read_bytes()
-    anchor_chain_tails = [s for s in anchor.split(",") if s]
     print(f"[local] uploading {len(pdb_bytes)} bytes for system={system}"
-          + (f"  anchors={anchor_chain_tails}" if anchor_chain_tails else ""))
+          + (f"  com_restrain={com_restrain}@k={com_restrain_k}" if com_restrain else ""))
     result = prep_remote.remote(system, pdb_bytes,
                                  padding_nm=padding_nm,
                                  temperature_K=temperature,
                                  ionic_strength=ionic_strength,
                                  dt_fs=dt_fs, hmr_amu=hmr_amu,
-                                 anchor_chain_tails=anchor_chain_tails)
+                                 com_restrain=com_restrain or None,
+                                 com_restrain_k=com_restrain_k)
     print(f"[local] prep done: {result}")
 
 
@@ -181,20 +185,26 @@ def produce(system: str, replica: int = 0, ns: float = 100.0,
 
 @app.local_entrypoint()
 def fanout(system: str, replicas: int = 3, ns: float = 100.0,
-            dcd_interval_ps: float = 10.0, dt_fs: float = 4.0):
+            dcd_interval_ps: float = 10.0, dt_fs: float = 4.0,
+            start_replica: int = 0):
     """Launch N replicas in parallel via spawn(); fire-and-forget.
+
+    Replica indices are `start_replica` through `start_replica + replicas - 1`,
+    so e.g. start_replica=1, replicas=2 runs indices 1 and 2 (useful when
+    replica 0 already exists from a prior run).
 
     Print function-call IDs so the user can poll status independently
     (no local CLI connection needed afterward).
     """
     handles = []
-    for r in range(replicas):
+    for r in range(start_replica, start_replica + replicas):
         h = produce_remote.spawn(system, r, ns=ns,
                                   dcd_interval_ps=dcd_interval_ps,
                                   dt_fs=dt_fs)
         print(f"[modal] {system} replica {r}: function_call_id={h.object_id}")
         handles.append(h.object_id)
-    print(f"[modal] {replicas} replicas of {system} spawned")
+    print(f"[modal] {replicas} replicas of {system} spawned "
+          f"(indices {start_replica}..{start_replica + replicas - 1})")
     return handles
 
 

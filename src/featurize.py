@@ -39,6 +39,8 @@ def _detect_format(path: str) -> str:
         return "alphaflow"
     if "bioemu" in p:
         return "bioemu"
+    if "marsfm" in p or "mars_fm" in p or "mars-fm" in p:
+        return "marsfm"
     if p.endswith(".npz"):
         return "alphaflow"  # default assumption for npz
     return "md"
@@ -85,6 +87,26 @@ def load_ensemble(session, source: str, path: str, format: str = "auto") -> Tupl
         else:
             data = np.load(path)
             coords = data["samples"] if "samples" in data.files else data[data.files[0]]
+        structure = None
+    elif fmt == "marsfm":
+        # MarS-FM (Kapusniak et al. 2025, arXiv:2509.24779) generates protein
+        # conformational trajectories ~600x faster than explicit-solvent MD by
+        # sampling MSM transitions via flow matching. The published model has
+        # no released checkpoint or canonical output schema as of v0.2; this
+        # loader assumes the output mirrors AlphaFlow/BioEmu (a directory of
+        # PDB samples or an .npz of (N, A, 3) coords). When the official
+        # checkpoint drops, revisit the key names and add any author-provided
+        # metadata (state assignment, lag-time, T condition).
+        if os.path.isdir(path):
+            coords = _load_pdb_dir(path)
+        else:
+            data = np.load(path)
+            for key in ("samples", "coords", "x", "conformations"):
+                if key in data.files:
+                    coords = data[key]
+                    break
+            else:
+                coords = data[data.files[0]]
         structure = None
     else:
         raise ValueError(f"unknown ensemble format: {fmt}")
