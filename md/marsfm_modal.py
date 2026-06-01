@@ -43,28 +43,43 @@ APP_NAME = "chimerax-vampnet-marsfm"
 HF_REPO = "valencelabs/mars-fm"
 
 image = (
-    modal.Image.debian_slim(python_version="3.11")
+    # NGC PyTorch container has tuned CUDA + cuDNN + torch + NCCL +
+    # apex; use that as the base for any GPU-PyTorch workload rather
+    # than rolling our own torch wheel on debian.
+    modal.Image.from_registry("nvcr.io/nvidia/pytorch:26.04-py3",
+                                add_python=None)
     .apt_install("git", "build-essential", "wget")
     .pip_install(
-        "torch==2.4.1",
-        "numpy<2",
-        "scipy",
+        # From the MarS-FM conda environment (mars.yaml). NGC PyTorch
+        # image already has torch, numpy, scipy, pandas, tqdm.
+        "pytorch-lightning>=2.4",
+        "torchdiffeq",
+        "deeptime",
+        "dm-tree",
+        "fair-esm",
         "biopython",
         "mdtraj",
+        "wandb",
+        "matplotlib",
+        "statsmodels",
         "huggingface_hub",
-        "pandas",
-        "einops",
-        "tqdm",
         "ml-collections",
-        index_url="https://download.pytorch.org/whl/cu124",
+        "einops",
     )
     .run_commands(
-        # Clone the MarS-FM repo and install its requirements.
+        # Clone the MarS-FM repo. Their conda env file requires conda,
+        # so we pip-install what we can on top of NGC; if their
+        # generate.py needs extra deps surfaced from the conda yaml,
+        # add them here.
         "cd /opt && git clone https://github.com/valence-labs/mars-fm.git",
-        # Their conda env file requires conda, so we install via pip from
-        # the requirements they list (best-effort; the conda env may have
-        # exact pins not reflected here -- adjust if inference fails).
         "cd /opt/mars-fm && (pip install -e . --no-deps || true)",
+        # MarS-FM's vendored OpenFold uses the pre-v2.0 flash_attn API
+        # (flash_attn_unpadded_kvpacked_func, renamed to
+        # flash_attn_varlen_kvpacked_func in v2.0+). NGC PyTorch ships
+        # newer flash_attn so we alias on import.
+        "sed -i 's/flash_attn_unpadded_kvpacked_func/flash_attn_varlen_kvpacked_func/g' "
+        "/opt/mars-fm/mars/vendored/openfold/primitives.py "
+        "/opt/mars-fm/mars/vendored/openfold/ipa.py 2>/dev/null || true",
     )
 )
 
@@ -117,7 +132,7 @@ def _pdb_to_atom14_and_seqres(pdb_bytes: bytes, chain_id: str | None = None):
     }
 
     parser = PDBParser(QUIET=True)
-    structure = parser.get_structure("p", io.BytesIO(pdb_bytes))
+    structure = parser.get_structure("p", io.StringIO(pdb_bytes.decode("utf-8")))
     model = next(structure.get_models())
 
     if chain_id is None:
@@ -182,13 +197,18 @@ def sample_remote(pdb_bytes: bytes, name: str, n_samples: int = 2000,
         out_dir = tmp / "out"
         out_dir.mkdir()
 
-        # Save atom14 input.
-        np.save(data_dir / f"{name}.npy", atom14)
+        # Save atom14 input. MarS-FM's load_starting_structure expects
+        # shape (n_frames, n_residues, 14, 3) and slices [0:1]; we add
+        # a leading singleton frame dim.
+        np.save(data_dir / f"{name}.npy", atom14[np.newaxis])
 
         # One-row CSV split.
         split_csv = splits_dir / "single.csv"
         split_csv.write_text(f"name,seqres\n{name},{seqres}\n")
 
+        # MarS-FM's generate.py emits 1 frame per MarS call (the
+        # --max_mars_samples flag caps internal MSM exploration per call,
+        # not output frame count). So calls_mars == n_samples.
         cmd = [
             sys.executable, "-m", "scripts.generate",
             "--mars_ckpt", mars_ckpt,
@@ -196,8 +216,10 @@ def sample_remote(pdb_bytes: bytes, name: str, n_samples: int = 2000,
             "--split", str(split_csv),
             "--out_dir", str(out_dir),
             "--pdb_id", name,
-            "--max_mars_samples", str(n_samples),
+            "--calls_mars", str(n_samples),
+            "--max_mars_samples", "8",
         ]
+        print(f"[marsfm] calls_mars={n_samples} (1 output frame per call)")
         print(f"[marsfm] {' '.join(cmd)}")
         sys.stdout.flush()
         subprocess.run(cmd, cwd="/opt/mars-fm", check=True)
