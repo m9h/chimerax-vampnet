@@ -260,8 +260,8 @@ def _analyze_one(system_dir, n_replicas, frame_stride, n_states, lag, epochs,
 
 
 @app.function(cpu=8, memory=49152, timeout=3600, volumes={"/vol": vol})
-def analyze_remote(apo_system: str = "notch1_apo",
-                    holo_system: str = "notch1_holo_diag",
+def analyze_remote(apo_system: str = "notch1_apo_v3",
+                    holo_system: str = "notch1_holo_v3",
                     n_states: int = 4, lag: int = 50, epochs: int = 60,
                     frame_stride: int = 5, n_replicas: int = 3,
                     ps_per_dcd_frame: float = 20.0):
@@ -310,8 +310,8 @@ def analyze_remote(apo_system: str = "notch1_apo",
 
 
 @app.local_entrypoint()
-def analyze(apo_system: str = "notch1_apo",
-            holo_system: str = "notch1_holo_diag",
+def analyze(apo_system: str = "notch1_apo_v3",
+            holo_system: str = "notch1_holo_v3",
             n_states: int = 4, lag: int = 50, epochs: int = 60,
             out: str = "notch1_h2_results.json"):
     result = analyze_remote.remote(

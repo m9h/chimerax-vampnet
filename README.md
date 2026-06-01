@@ -11,9 +11,9 @@ Every command returns JSON-serializable data so an MCP-capable LLM
 agent (Claude Desktop, Cursor, etc.) can drive an adaptive analysis
 loop via the included HTTP bridge.
 
-## Status — v0.2
+## Status — v0.3
 
-**1184 LOC across 8 modules, 18/18 tests green.**
+**1184 LOC across 8 modules, 18/18 tests green; v0.3 adds COM-distance restraint for NRR membrane anchor.**
 
 | Module | Lines | Status |
 |---|---:|---|
@@ -32,13 +32,17 @@ loop via the included HTTP bridge.
 - **Tier-1 (chignolin CLN025)**: self-generated 1 µs trajectory at 340 K on Modal H100, 4 fs HMR, $37. Bundle recovers:
   - Slowest implied timescale **166 ns** (published reference: 100-500 ns)
   - Clean folded vs unfolded state separation (Trp9-Tyr1 5.7 vs 15.6 Å)
-- **Tier-2 (Notch1 NRR apo + holo, v0.2)**: apo + corrected-chain holo
-  trajectories (3×100 ns each, Modal A100-80GB). v0.2 H2 analysis
-  finds the directional prediction **met** (apo 21.6% vs holo 17.9%
-  auto-inhibited, Δ = +3.7 pp) but the pre-registered magnitudes
-  (apo ≥ 50%, holo ≤ 30%) **not met** because both systems undergo
-  NRR-fragment dissociation across 100 ns without a working
-  transmembrane-anchor restraint. Full diagnostic: `md/notch1_h2_results.md`.
+- **Tier-2 (Notch1 NRR apo + holo)**: apo + corrected-chain holo
+  trajectories under two restraint protocols. v0.2 unrestrained MD
+  (3×100 ns each, Modal A100-80GB): directional H2 **met** (+3.7 pp,
+  apo more auto-inhibited), magnitudes not met (apo 21.6% vs target
+  ≥50%, holo 17.9% vs target ≤30%) due to NRR-fragment dissociation
+  to >100 Å. v0.3 NEC-NTM COM-distance restraint (3×100 ns each):
+  same directional result (+3.8 pp), restraint cleanly eliminates
+  dissociation (COM sep std 24 Å → 0.3 Å), but magnitudes **still**
+  not met — isolates the 100 ns sampling horizon (not the restraint)
+  as the magnitude blocker. Full diagnostics:
+  `md/notch1_h2_results.md` (v0.2), `md/notch1_h2_v3_results.md` (v0.3).
 - **Wider robustness (ATLAS sweep)**: 4 public ATLAS trajectories
   spanning all-α / mostly-β / mixed / large-α folds and 73-518
   residues, all converge to non-degenerate 4-state decompositions
@@ -148,28 +152,40 @@ Modal cloud commands.
 - ✅ MCP-stdio proxy for Claude Desktop / Cursor / Continue
 - ✅ Implied-timescales convergence test in `vampnet timescales`
 - ✅ Corrected-chain Notch1 holo prep + 3×100 ns A100-80GB MD
-- ✅ H2 analysis: direction met (+3.7 pp), magnitudes pending
+- ✅ H2 directional verdict (+3.7 pp, magnitudes pending)
 - ✅ Wider ATLAS robustness sweep (4 proteins, 4 folds)
 - ✅ LLM-agent adaptive-sampling demonstration (2.1× slow IT growth)
 
-**v0.3:**
-- Working transmembrane-anchor restraint (capture positions
-  post-NPT; previous attempt NaN'd at production — see
-  `md/notch1_h2_results.md`). Re-run apo+holo, expect magnitudes
-  to recover.
+**v0.3 (shipped):**
+- ✅ NEC-NTM COM-distance restraint (`CustomCentroidBondForce`,
+  replaces per-atom anchor — see `md/notch1_h2_v3_results.md` and
+  `md/prep.py:_add_com_distance_restraint`). Per-atom anchors NaN
+  at HMR=4 fs at any useful k; COM-distance is invariant to whole-
+  system drift and has no per-atom force singularities.
+- ✅ Apo + holo MD under the COM restraint (3×100 ns each); H2
+  directional replicates (+3.8 pp); restraint eliminates NRR
+  dissociation; sampling horizon (not restraint) isolated as
+  magnitude blocker.
+- ✅ `vampnet load_ensemble … source marsfm` loader stub ready
+  for MarS-FM (arXiv:2509.24779) checkpoint when released.
+
+**v0.4:**
+- MarS-FM ensemble integration on Notch1 NRR apo + holo (once the
+  official checkpoint drops) — direct test of the magnitude question.
+  Speedup ~600× vs explicit MD; per-replica cost ~$0.05 vs ~$70.
 - Bootstrap uncertainty on H2 populations (deeptime MSM bootstrap).
 - Real AlphaFlow + BioEmu inference on Modal — `md/alphaflow_modal.py`
-  is the draft Modal app — and `vampnet ensemble fetch` CLI verb.
+  is the draft Modal app.
 - Multi-source joint VAMPNet with per-source covariance weighting +
-  stratified state-coverage report (test H3: "which states does
-  AlphaFlow reach that 100 ns MD does not?").
+  stratified state-coverage report (test H3).
 - Live MCP-driven adaptive sampling on Notch1: wire the demo loop to
   actual Modal MD launches seeded from `vampnet means` outputs.
 
-**Stretch (v0.4+):**
+**Stretch (v0.5+):**
 - Gibbs energy landscape rendering inside ChimeraX
 - MACE-OFF neural-network potentials in the MD backend
 - DiffDock pose-stability teaching demo
+- Umbrella sampling on NEC-NTM distance for a μs-equivalent PMF
 
 ## License
 
