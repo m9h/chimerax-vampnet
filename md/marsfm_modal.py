@@ -98,9 +98,16 @@ THREE_TO_ONE = {
 def _pdb_to_atom14_and_seqres(pdb_bytes: bytes, chain_id: str | None = None):
     """Parse a PDB into the atom14 representation MarS-FM expects.
 
-    Returns (atom14 ndarray shape (n_residues, 14, 3), seqres str). If
-    chain_id is None, takes the first protein chain only (MarS-FM is a
-    single-chain model)."""
+    Returns (atom14 ndarray shape (n_residues, 14, 3), seqres str).
+    chain_id options:
+        None          -> first protein chain only (single-chain default)
+        "<letter>"    -> exactly that chain
+        "ALL"         -> all protein chains concatenated into one virtual
+                          chain (PDBFixer-renumbered order). For systems
+                          where MarS-FM-native multi-chain inference is
+                          unavailable but the partners are biologically
+                          linked (e.g. Notch1 NEC + NTM that come from
+                          one polyprotein cleaved at the S1 site)."""
     import io
     import numpy as np
     from Bio.PDB import PDBParser
@@ -139,15 +146,23 @@ def _pdb_to_atom14_and_seqres(pdb_bytes: bytes, chain_id: str | None = None):
         # First protein chain only.
         for chain in model:
             if any(is_aa(r, standard=True) for r in chain):
-                target_chain = chain
+                residues = [r for r in chain if is_aa(r, standard=True)
+                            and r.get_resname() in THREE_TO_ONE]
                 break
         else:
             raise ValueError("no protein chain found")
+    elif chain_id.upper() == "ALL":
+        # Concatenate all protein chains in iteration order.
+        residues = []
+        for chain in model:
+            for r in chain:
+                if is_aa(r, standard=True) and r.get_resname() in THREE_TO_ONE:
+                    residues.append(r)
     else:
         target_chain = model[chain_id]
+        residues = [r for r in target_chain if is_aa(r, standard=True)
+                    and r.get_resname() in THREE_TO_ONE]
 
-    residues = [r for r in target_chain if is_aa(r, standard=True)
-                and r.get_resname() in THREE_TO_ONE]
     seqres = "".join(THREE_TO_ONE[r.get_resname()] for r in residues)
 
     atom14 = np.zeros((len(residues), 14, 3), dtype=np.float32)
