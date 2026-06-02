@@ -158,6 +158,17 @@ def _pdb_to_atom14_and_seqres(pdb_bytes: bytes, chain_id: str | None = None):
             for r in chain:
                 if is_aa(r, standard=True) and r.get_resname() in THREE_TO_ONE:
                     residues.append(r)
+    elif "," in chain_id:
+        # Comma-separated subset of chain IDs, e.g. "X,K" for Notch1 NRR
+        # (NEC+NTM) without the Fab chains. Order in concat follows the
+        # comma-separated list, NOT the PDB order.
+        wanted = [c.strip() for c in chain_id.split(",")]
+        residues = []
+        for wid in wanted:
+            chain = model[wid]
+            for r in chain:
+                if is_aa(r, standard=True) and r.get_resname() in THREE_TO_ONE:
+                    residues.append(r)
     else:
         target_chain = model[chain_id]
         residues = [r for r in target_chain if is_aa(r, standard=True)
