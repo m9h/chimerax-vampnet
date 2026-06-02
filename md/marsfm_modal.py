@@ -67,16 +67,26 @@ image = (
         "einops",
     )
     .run_commands(
-        # Clone the MarS-FM repo. Their conda env file requires conda,
-        # so we pip-install what we can on top of NGC; if their
-        # generate.py needs extra deps surfaced from the conda yaml,
-        # add them here.
+        # Clone upstream as a placeholder; we then overwrite the source
+        # tree with our local fork (which contains the multi-chain
+        # Phase-1 patch). The upstream clone is only kept so the dir
+        # structure (e.g. /opt/mars-fm) is present for the flash_attn
+        # sed to find files even if we later flip back to upstream-only.
         "cd /opt && git clone https://github.com/valence-labs/mars-fm.git",
         "cd /opt/mars-fm && (pip install -e . --no-deps || true)",
+    )
+    # Overlay our local mars-fm fork with the Phase-1 multi-chain patch
+    # at /tmp/mars-fm-fork (see /home/mhough/.claude/plans/twinkly-
+    # whistling-bonbon.md for the design). add_local_dir copies our
+    # fork OVER the upstream clone, so the modified model.py and
+    # generate.py take effect.
+    .add_local_dir("/tmp/mars-fm-fork", "/opt/mars-fm", copy=True)
+    .run_commands(
         # MarS-FM's vendored OpenFold uses the pre-v2.0 flash_attn API
         # (flash_attn_unpadded_kvpacked_func, renamed to
         # flash_attn_varlen_kvpacked_func in v2.0+). NGC PyTorch ships
-        # newer flash_attn so we alias on import.
+        # newer flash_attn so we alias on import. (Re-apply on the
+        # overlaid fork; the local fork doesn't include this sed.)
         "sed -i 's/flash_attn_unpadded_kvpacked_func/flash_attn_varlen_kvpacked_func/g' "
         "/opt/mars-fm/mars/vendored/openfold/primitives.py "
         "/opt/mars-fm/mars/vendored/openfold/ipa.py 2>/dev/null || true",
@@ -93,6 +103,56 @@ THREE_TO_ONE = {
     "MET": "M", "ASN": "N", "PRO": "P", "GLN": "Q", "ARG": "R",
     "SER": "S", "THR": "T", "VAL": "V", "TRP": "W", "TYR": "Y",
 }
+
+
+def _pdb_to_atom14_and_seqres_and_chainid(pdb_bytes: bytes, chain_id: str | None = None):
+    """Same as _pdb_to_atom14_and_seqres but also returns a per-residue
+    chain_id ndarray (0, 1, 2, ... in order of chains taken). Used for
+    the Phase-1 multi-chain inference API."""
+    atom14, seqres = _pdb_to_atom14_and_seqres(pdb_bytes, chain_id=chain_id)
+    # Re-parse to assign chain ids per residue, matching the same chain
+    # filtering as _pdb_to_atom14_and_seqres.
+    import io
+    import numpy as np
+    from Bio.PDB import PDBParser
+    from Bio.PDB.Polypeptide import is_aa
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("p", io.StringIO(pdb_bytes.decode("utf-8")))
+    model = next(structure.get_models())
+    cids = []
+    if chain_id is None:
+        # First protein chain only -> all-zeros.
+        for chain in model:
+            if any(is_aa(r, standard=True) for r in chain):
+                for r in chain:
+                    if is_aa(r, standard=True) and r.get_resname() in THREE_TO_ONE:
+                        cids.append(0)
+                break
+    elif chain_id.upper() == "ALL":
+        cid = 0
+        for chain in model:
+            chain_had_any = False
+            for r in chain:
+                if is_aa(r, standard=True) and r.get_resname() in THREE_TO_ONE:
+                    cids.append(cid)
+                    chain_had_any = True
+            if chain_had_any:
+                cid += 1
+    elif "," in chain_id:
+        wanted = [c.strip() for c in chain_id.split(",")]
+        for cid, wid in enumerate(wanted):
+            chain = model[wid]
+            for r in chain:
+                if is_aa(r, standard=True) and r.get_resname() in THREE_TO_ONE:
+                    cids.append(cid)
+    else:
+        target_chain = model[chain_id]
+        for r in target_chain:
+            if is_aa(r, standard=True) and r.get_resname() in THREE_TO_ONE:
+                cids.append(0)
+    assert len(cids) == atom14.shape[0], \
+        f"chain_id length {len(cids)} != atom14 length {atom14.shape[0]}"
+    return atom14, seqres, np.array(cids, dtype=np.int64)
 
 
 def _pdb_to_atom14_and_seqres(pdb_bytes: bytes, chain_id: str | None = None):
@@ -208,8 +268,12 @@ def sample_remote(pdb_bytes: bytes, name: str, n_samples: int = 2000,
     print(f"[marsfm] checkpoint at {mars_ckpt}")
 
     print(f"[marsfm] parsing PDB ({len(pdb_bytes)} bytes), name={name}")
-    atom14, seqres = _pdb_to_atom14_and_seqres(pdb_bytes, chain_id=chain_id)
-    print(f"[marsfm] atom14 shape {atom14.shape}, seqres len {len(seqres)}")
+    atom14, seqres, cids = _pdb_to_atom14_and_seqres_and_chainid(
+        pdb_bytes, chain_id=chain_id)
+    n_chains = int(cids.max()) + 1
+    chain_lens = [int((cids == c).sum()) for c in range(n_chains)]
+    print(f"[marsfm] atom14 shape {atom14.shape}, seqres len {len(seqres)}, "
+          f"{n_chains} chain(s) of lengths {chain_lens}")
     if len(seqres) > 500:
         print(f"[marsfm] WARNING: seqres len {len(seqres)} > 500 (MD-Cath training cap); "
               f"out-of-distribution behavior likely")
@@ -227,6 +291,10 @@ def sample_remote(pdb_bytes: bytes, name: str, n_samples: int = 2000,
         # shape (n_frames, n_residues, 14, 3) and slices [0:1]; we add
         # a leading singleton frame dim.
         np.save(data_dir / f"{name}.npy", atom14[np.newaxis])
+        # Phase-1 multi-chain API: emit a per-residue chain_id npy that
+        # our forked load_starting_structure will pick up (single-chain
+        # input writes all-zeros, which is the trained baseline path).
+        np.save(data_dir / f"{name}_chain_id.npy", cids)
 
         # One-row CSV split.
         split_csv = splits_dir / "single.csv"
