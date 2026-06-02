@@ -247,16 +247,21 @@ def _pdb_to_atom14_and_seqres(pdb_bytes: bytes, chain_id: str | None = None):
 
 @app.function(gpu="H100", timeout=3600)
 def sample_remote(pdb_bytes: bytes, name: str, n_samples: int = 2000,
-                   chain_id: str | None = None):
+                   chain_id: str | None = None, chain_gap: int = 0):
     """Run MarS-FM inference on a single PDB. Returns the generated
     ensemble as numpy bytes."""
     import io
+    import os
     import subprocess
     import sys
     import tempfile
 
     import numpy as np
     from huggingface_hub import snapshot_download
+
+    if chain_gap > 0:
+        os.environ["MARSFM_CHAIN_GAP"] = str(chain_gap)
+        print(f"[marsfm] Phase-1.5: MARSFM_CHAIN_GAP={chain_gap}")
 
     print(f"[marsfm] downloading checkpoint {HF_REPO}")
     ckpt_dir = snapshot_download(repo_id=HF_REPO, cache_dir="/root/.cache/hf")
@@ -338,14 +343,21 @@ def sample_remote(pdb_bytes: bytes, name: str, n_samples: int = 2000,
 
 @app.local_entrypoint()
 def sample(pdb: str, name: str = "protein", n_samples: int = 2000,
-           chain_id: str = "", out: str = ""):
-    """Generate a MarS-FM ensemble for the given PDB and save locally."""
+           chain_id: str = "", chain_gap: int = 0, out: str = ""):
+    """Generate a MarS-FM ensemble for the given PDB and save locally.
+
+    chain_gap (Phase 1.5): pos = within_chain_idx + chain_id*chain_gap
+    instead of just within_chain_idx. Forces the trained model to
+    interpret chain breaks as large sequence-position jumps. Default 0
+    = Phase-1 (per-chain reset only). Use 50-150 for stronger signal.
+    """
     pdb_bytes = Path(pdb).read_bytes()
     chain = chain_id or None
     print(f"[local] uploading {len(pdb_bytes)} bytes for {name}; "
-          f"requesting {n_samples} samples")
+          f"requesting {n_samples} samples"
+          + (f"  chain_gap={chain_gap}" if chain_gap else ""))
     data = sample_remote.remote(pdb_bytes, name, n_samples=n_samples,
-                                  chain_id=chain)
+                                  chain_id=chain, chain_gap=chain_gap)
     out_path = Path(out) if out else Path(f"{name}_marsfm.npz")
     out_path.write_bytes(data)
     print(f"[local] wrote {out_path} ({len(data)/(1<<20):.1f} MB)")
