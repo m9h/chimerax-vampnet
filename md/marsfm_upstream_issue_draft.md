@@ -85,27 +85,56 @@ mean 0.0065 Å, ~half the atoms differ; per-frame RMSD up to 0.148
 Å). The positional embedding is just too small a fraction of the
 model's input signal to shift population-level statistics by itself.
 
-## What this tells us
+## What this tells us — and a correction to our initial hypothesis
 
-The positional embedding contribution is dominated by IPA frames +
-aatype embeddings. For meaningful multi-chain behaviour the model
-needs explicit chain-awareness in a more impactful channel.
-Specifically:
+A follow-up Phase-1.5 hack (each later chain starts at an elevated
+`pos_embed` index — `effective_pos = within_chain + chain_id * 100`)
+produced **bitwise-identical** output to the gap=0 baseline. Tracing
+with debug prints established why:
 
-1. **Pair representation** (set `c_z > 0` in `ipa_args`) with
-   AlphaFold-Multimer-style relative position encoding:
-   `relpos = clip(i - j, -32, 32)` for same-chain pairs, sentinel
-   bin 33 for cross-chain pairs, one-hot → linear → c_z. Your IPA
-   already accepts a `z` argument; the model just doesn't construct
-   one.
+> The released MD-CATH 450 checkpoint was trained without
+> `--abs_pos_emb`, so `self.args.abs_pos_emb == False` and the
+> entire `if self.args.abs_pos_emb:` block in `MarSModel.forward`
+> is **dead code** for this checkpoint. All positional information
+> comes from RoPE inside `mars.vendored.mha.MultiheadAttention`
+> (every attention layer is constructed with
+> `use_rotary_embeddings=True`).
 
-2. **Retrain** with multi-chain data so the pair signal is actually
+So our Phase-1 plan modified a code path that's unreachable for
+your published checkpoint. The API flow works end-to-end (we
+verified `kwargs["chain_id"]` reaches `MarSModel.forward(chain_id=...)`
+correctly), but the chain_id branch sits inside the dead `if`.
+
+The real chain-awareness lever is **RoPE position indexing inside
+`MultiheadAttention`**. Making it chain-aware would mean passing
+explicit position indices (with per-chain reset or chain-id offset)
+into the rotary embedding evaluation, instead of the implicit
+`arange(L)` it currently uses. That's a more invasive change and
+is plausibly hardest to do at inference time because the trained
+weights have memorised the standard RoPE rotation pattern.
+
+For meaningful multi-chain inference we therefore think the right
+path is **pair representation + retrain** (the AlphaFold-Multimer
+recipe):
+
+1. Set `c_z > 0` in `ipa_args` and construct a pair representation
+   via relative position encoding: `relpos = clip(i - j, -32, 32)`
+   for same-chain pairs, sentinel bin 33 for cross-chain pairs,
+   one-hot → linear → c_z. Your IPA already accepts a `z` argument;
+   the model just doesn't construct one.
+
+2. Retrain with multi-chain data so the pair signal is actually
    used. Candidate training sources: ATLAS multi-chain entries
    (Vander Meersche 2024), the multi-chain subset of MD-Cath
    (currently filtered as single-domain in
    `scripts/prepare_data/prep_sims_mdcath.py`), or our own
    Notch1 NRR + Fab v0.3 MD (3 × 100 ns each on Modal A100 with
    working COM-distance restraints — happy to share).
+
+Small upstream note while you're in there: it might be worth
+either removing the `--abs_pos_emb` code path or gating it behind a
+clearer assertion, since right now it's reachable but architecturally
+unused in your published recipe.
 
 ## Asks
 

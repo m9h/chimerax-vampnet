@@ -68,38 +68,54 @@ embeddings dominate.
 Direction preserved; magnitude essentially unchanged. The Phase-1 API
 does not move us closer to the pre-registered holo ≤ 30 % threshold.
 
-## Interpretation
+## Interpretation — and the actual cause of zero effect
 
-The Phase-1 plan was honest about its limitation:
+We followed up with a more aggressive Phase-1.5 hack (`chain_gap=100`
+and `chain_gap=200`: each later chain starts at an elevated
+`pos_embed` index, recruiting the model's learned "distant positions
+≈ not bonded" bias). The output was **bitwise identical** to the
+gap=0 baseline. Tracing with debug prints established the root cause:
 
-> The trained model has learned peptide-bond locality from MD-Cath, so
-> it will still implicitly assume adjacent residues are bonded. The
-> chain-aware positional embedding just stops telling the model
-> "residue 175 is at position 175"; instead it says "residue 175 is at
-> position 0 of chain 1". Whether this is *enough* to produce
-> non-pathological ensembles on real multi-chain inputs is the
-> empirical question this phase answers.
+> The released MD-CATH 450 checkpoint was trained without
+> `--abs_pos_emb`, so `self.args.abs_pos_emb == False` and the
+> entire `if self.args.abs_pos_emb:` block in `MarSModel.forward`
+> is **dead code** for this checkpoint. All positional information
+> comes from RoPE inside `MultiheadAttention` (every attention
+> layer is built with `use_rotary_embeddings=True`).
 
-The empirical answer: **Phase-1 alone is not enough**. The positional
-embedding contribution to the MarS-FM output is too small to move
-distribution-level metrics on real multi-chain inputs. The model
-inherits its multi-chain behaviour primarily from the IPA frames and
-aatype embeddings, neither of which know about chains under Phase-1.
+So the Phase-1 plan's lever (absolute positional embedding) does
+not exist in the deployed model. The fork compiles, the API is
+honored, kwargs flow through to `MarSModel.forward(chain_id=...,
+chain_gap=...)` — but the chain_id branch sits inside a `False`
+conditional and never runs. The ~0.5% coord-level differences we
+observed in the first comparison are floating-point noise from CUDA
+kernel non-determinism, not from the chain_id signal.
 
-This **strongly motivates Phase 2**: to actually shift the output
-distribution, we need to either
+**The real chain-awareness lever is RoPE inside
+`mars.vendored.mha.MultiheadAttention`.** RoPE applies a per-position
+rotation to query/key vectors, and its position indexing is implicit
+(0, 1, 2, ..., L-1) inside the attention call. To make it chain-aware
+we'd need to pass an explicit position-index tensor (with per-chain
+reset and/or chain-id offset) into the RoPE evaluation. This is a
+more invasive change — it has to thread through the MHA module's
+forward and the rotary-embedding application — and is plausibly
+hardest at inference time because the trained weights have memorised
+the standard (continuous) RoPE rotation pattern.
 
-1. **Add a chain-aware pair representation** (`c_z > 0` in
-   `ipa_args`) with AlphaFold-Multimer-style relative position
-   encoding (within-chain relpos + sentinel cross-chain bin), and
-2. **Retrain** with multi-chain data so the new pair signal is
-   actually used by the model weights, OR
-3. **Construct a chain-break attention mask** that prevents the
-   transformer layers from attending across chain boundaries during
-   inference (a more aggressive Phase-1.5 hack, no retrain).
+This **strongly motivates Phase 2** — pair representation + retrain —
+as the only credible path to real multi-chain MarS-FM inference. The
+inference-only Phase-1 plan was the right shape (small, backward-
+compatible API surface) but the wrong lever for this checkpoint.
 
-Option 3 is the next thing worth trying inference-time before
-committing to a full retrain. Option 1+2 is the proper solution.
+What remains valuable from Phase 1:
+
+1. **The API surface** (`chain_id` field on the item dict, kwarg on
+   `MarSModel.forward`, env-var pass-through) is the right place for
+   Phase 2 to plug into. Files modified are still the right files.
+2. **The dead-code discovery** is itself a useful contribution to
+   the upstream team — the `abs_pos_emb` code path is unreachable
+   for the released checkpoint, suggesting either remove it or
+   gate it more clearly.
 
 ## Negative-result value
 
