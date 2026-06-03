@@ -85,6 +85,31 @@ state. Choosing any single source would have missed at least one basin
 the MD-equilibrium basins; MarS-FM or BioEmu: misses state 1 and the
 MD-equilibrium basins).
 
+## Biological annotation (v0.6)
+
+The five-source statistical split above was grounded in
+interpretable structural features in `md/notch1_h3_biology.py` and
+written up in `md/notch1_h3_biology_results.md`. Key annotations:
+
+- **States 0 and 3** are sub-basins of the *same* MD auto-inhibited
+  equilibrium (Rg 18.9, NEC–NTM COM 4.6–4.7 Å on top of the v0.3
+  restraint set point of 3.94 Å). They differ only in NEC
+  end-to-end distance (18 vs 24 Å) — not in interface geometry.
+- **State 1** (AF3 structure-prediction) is reached by AlphaFlow
+  and Boltz-2 via *different* structural routes that share the
+  same direction: tighter LNR-A → HD-N packing (22–24 Å) than MD
+  samples (27 Å). Boltz-2 collapses (Rg 16.8); AlphaFlow shortens
+  end-to-end (15 Å). Suggestive of Fab-bound-like contraction
+  even though no Fab conditions either model.
+- **State 2** (flow-matching) is the highest-variance state.
+  MarS-FM samples end-to-end distances at 35.6 ± 14.3 Å (std
+  almost twice MD's mean) and reaches conformations 14 Å (Kabsch
+  RMSD) from the MD mean — the long-tail magnitude estimator we
+  always wanted from MD.
+- **Boltz-2** has a **systematic compactness bias** (Rg 16.8 vs
+  MD's 18.9 across both states it occupies), predictable from its
+  PDB-structure training distribution.
+
 ## What's pending
 
 - **AlphaFold3 weights-gated integration**: queued behind DeepMind's

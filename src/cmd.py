@@ -188,8 +188,13 @@ def cmd_mcp_stop(session):
 # ----------------------------------------------------------------------
 _DESC_LOAD_ENSEMBLE = CmdDesc(
     required=[("source", StringArg), ("path", OpenFileNameArg)],
-    keyword=[("format", EnumOf(["auto", "alphaflow", "bioemu", "marsfm", "md"]))],
-    synopsis="Load a conformational ensemble",
+    keyword=[("format", EnumOf(["auto", "alphaflow", "bioemu", "boltz",
+                                  "marsfm", "md"]))],
+    synopsis=("Load a conformational ensemble (MD trajectory, AlphaFlow / "
+              "ESMFlow-MD, BioEmu, Boltz-2, or MarS-FM .npz). source is a "
+              "free-text label (e.g. 'md_apo', 'alphaflow'). format=auto "
+              "infers from the filename. Example: vampnet load_ensemble "
+              "md_apo apo.dcd; vampnet load_ensemble alphaflow af.npz"),
 )
 
 _DESC_FIT = CmdDesc(
@@ -199,25 +204,61 @@ _DESC_FIT = CmdDesc(
         ("features", EnumOf(["ca_distances", "torsions", "contacts"])),
         ("epochs", IntArg),
     ],
-    synopsis="Fit a VAMPnet on the loaded ensembles",
+    synopsis=("Fit a VAMPnet on the loaded ensembles. Typical: n_states 3-6, "
+              "lag 10-200 frames (rule of thumb: ~1/10 of the slowest "
+              "timescale you expect), epochs 50-200, features ca_distances. "
+              "Example: vampnet fit n_states 4 lag 20 epochs 60"),
 )
 
 _DESC_TIMESCALES = CmdDesc(
     keyword=[("taus", ListOf(IntArg))],
-    synopsis="Implied-timescales test",
+    synopsis=("Implied-timescales convergence test: re-fits a small MSM at "
+              "each tau and plots the slowest few timescales. Useful for "
+              "picking a stable lag for `vampnet fit`. Example: vampnet "
+              "timescales taus 5,10,20,50,100"),
 )
 
-_DESC_STATES = CmdDesc(synopsis="Color frames by VAMPnet state")
-_DESC_MEANS = CmdDesc(synopsis="Build a model per state mean structure")
+_DESC_STATES = CmdDesc(
+    synopsis=("Color the active trajectory frames by their VAMPnet-assigned "
+              "state. Requires a fitted VAMPnet (`vampnet fit` first) and "
+              "an MD structure in the session."),
+)
+_DESC_MEANS = CmdDesc(
+    synopsis=("Build a per-state mean-structure model in the session. One "
+              "ChimeraX Structure is added per VAMPnet state, named "
+              "vampnet_state_<i>. Useful for inspecting what each state "
+              "represents structurally."),
+)
 _DESC_ANIMATE = CmdDesc(
     keyword=[("mode", IntArg), ("n_frames", IntArg)],
-    synopsis="Animate along a slow VAMPnet mode",
+    synopsis=("Animate along a slow VAMPnet mode. mode is the mode index "
+              "(0 = slowest non-trivial), n_frames is the number of "
+              "interpolated frames. Example: vampnet animate mode 0 n_frames 60"),
 )
-_DESC_NETWORK = CmdDesc(synopsis="Transition matrix as a structured graph")
-_DESC_SAVE = CmdDesc(required=[("path", SaveFileNameArg)], synopsis="Save the VAMPnet")
-_DESC_LOAD = CmdDesc(required=[("path", OpenFileNameArg)], synopsis="Load a saved VAMPnet")
-_DESC_MCP_SERVE = CmdDesc(keyword=[("port", IntArg)], synopsis="Start the MCP bridge for external LLM agents")
-_DESC_MCP_STOP = CmdDesc(synopsis="Stop the MCP bridge")
+_DESC_NETWORK = CmdDesc(
+    synopsis=("Return the MSM transition matrix as a structured graph "
+              "(states + transition probabilities). Output is JSON-shaped "
+              "so an MCP client can post-process it."),
+)
+_DESC_SAVE = CmdDesc(
+    required=[("path", SaveFileNameArg)],
+    synopsis=("Save the fitted VAMPnet model + MSM to a pickle file. "
+              "Example: vampnet save /tmp/notch1.pkl"),
+)
+_DESC_LOAD = CmdDesc(
+    required=[("path", OpenFileNameArg)],
+    synopsis=("Load a previously saved VAMPnet from a pickle file. Example: "
+              "vampnet load /tmp/notch1.pkl"),
+)
+_DESC_MCP_SERVE = CmdDesc(
+    keyword=[("port", IntArg)],
+    synopsis=("Start the MCP bridge so external LLM agents (Claude Desktop, "
+              "Cursor) can drive this bundle. Default port 7345. Example: "
+              "vampnet mcp serve port 7345"),
+)
+_DESC_MCP_STOP = CmdDesc(
+    synopsis="Stop the MCP bridge started by `vampnet mcp serve`.",
+)
 
 
 def register_commands(logger):

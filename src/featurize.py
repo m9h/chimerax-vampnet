@@ -1,10 +1,12 @@
 """Ensemble loading + featurization for chimerax-vampnet.
 
-Loads conformational ensembles from three sources on equal footing:
+Loads conformational ensembles from five sources on equal footing:
 
   - MD trajectories (anything ChimeraX can open: .dcd, .xtc, .trr, .nc, ...)
-  - AlphaFlow ensembles (numpy .npz with 'coords' (N, 3) per sample)
+  - AlphaFlow / ESMFlow-MD ensembles (numpy .npz with 'coords' (N, A, 3))
   - BioEmu ensembles (numpy .npz or a directory of .pdb files)
+  - MarS-FM ensembles (numpy .npz)
+  - Boltz-2 ensembles (numpy .npz; shape-compatible with BioEmu)
 
 After loading, each frame becomes a row in an ensemble-frame index plus a
 parallel "source" tag. The featurize() function pulls CA-CA distances,
@@ -35,8 +37,10 @@ def _detect_format(path: str) -> str:
     p = path.lower()
     if p.endswith((".dcd", ".xtc", ".trr", ".nc", ".h5", ".pdb")):
         return "md"
-    if "alphaflow" in p or p.endswith(".npz") and "alphaflow" in p:
+    if "alphaflow" in p or "_af" in p or "esmflow" in p:
         return "alphaflow"
+    if "boltz" in p:
+        return "boltz"
     if "bioemu" in p:
         return "bioemu"
     if "marsfm" in p or "mars_fm" in p or "mars-fm" in p:
@@ -78,15 +82,23 @@ def load_ensemble(session, source: str, path: str, format: str = "auto") -> Tupl
         data = np.load(path)
         coords = data["coords"] if "coords" in data.files else data[data.files[0]]
         structure = None
-    elif fmt == "bioemu":
-        # BioEmu output convention: .npz with key 'samples' of shape (N, A, 3),
-        # or a directory of .pdb files.
+    elif fmt in ("bioemu", "boltz"):
+        # BioEmu output convention: .npz with key 'samples' of shape
+        # (N, A, 3), or a directory of .pdb files. Boltz-2 output is
+        # shape-compatible (same (N, A, 3) layout via the adapter in
+        # md/boltz_modal.py); we accept the same .npz keys so the
+        # bundle loader can ingest either sampler interchangeably.
         if os.path.isdir(path):
             # Glob *.pdb, load each via mdtraj or numpy parser.
             coords = _load_pdb_dir(path)
         else:
             data = np.load(path)
-            coords = data["samples"] if "samples" in data.files else data[data.files[0]]
+            for key in ("samples", "coords", "coords_ca"):
+                if key in data.files:
+                    coords = data[key]
+                    break
+            else:
+                coords = data[data.files[0]]
         structure = None
     elif fmt == "marsfm":
         # MarS-FM (Kapusniak et al. 2025, arXiv:2509.24779) generates protein

@@ -1,0 +1,62 @@
+# OpenScienceGrid HTCondor submission for chimerax-vampnet long-MD.
+#
+# OSG Connect (osgconnect.net) provides free CPU + opportunistic GPU
+# to U.S. researchers. Onboarding takes ~1 week. Once on, submit via:
+#
+#   condor_submit submit.sub
+#
+# This deck launches N=$(REPLICAS) MD replicas of a v0.3-prepared
+# system. Each replica runs as an independent HTCondor job that
+# pulls the prepared system from a stash location and writes its
+# DCD back.
+#
+# Variables to set before submission:
+#   SYSTEM           e.g. notch1_apo_v3
+#   STASH_PREFIX     e.g. osdf:///ospool/uc-shared/public/<your-user>/chimerax-vampnet
+#   PROJECT          your OSG project string
+#   NS_PER_REPLICA   number of nanoseconds per replica (default: 100)
+#   REPLICAS         number of replicas to launch (default: 10)
+
+universe                = vanilla
+executable              = runner.sh
+
+# Each job is one replica index $(Process), 0..REPLICAS-1.
+arguments               = $(SYSTEM) $(Process) $(NS_PER_REPLICA) $(STASH_PREFIX)
+
+transfer_input_files    = runner.sh
+transfer_output_files   = traj.dcd, log.csv, replica.json
+transfer_executable     = true
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+
+output                  = logs/replica_$(Process).out
+error                   = logs/replica_$(Process).err
+log                     = logs/replica_$(Process).log
+
+# OSG GPU node requirements.
+request_gpus            = 1
+request_cpus            = 2
+request_memory          = 8 GB
+request_disk            = 20 GB
+
+# Prefer modern NVIDIA GPUs (A100 / V100 / RTX 3090 class). OSG
+# advertises CUDACapability and Memory; we accept anything >= 7.0
+# capability with >= 16 GB memory.
+requirements            = (CUDACapability >= 7.0) && (CUDAGlobalMemoryMb >= 16000)
+
+# Suppress aggressive job removal — MD jobs are long-running.
++ProjectName            = "$(PROJECT)"
++WantsStashCache        = true
++SingularityImage       = "docker://nvcr.io/nvidia/cuda:12.6.3-runtime-ubuntu24.04"
++JobDurationCategory    = "Long"
+
+# Re-queue if a transient OSG worker eviction happens. MD is
+# resumable from the checkpoint.chk file via produce.py's
+# resume-from-checkpoint logic.
+on_exit_hold            = (ExitCode != 0) && (NumJobStarts < 5)
+
+# Number of replicas to spawn (overridable on the command line:
+# `condor_submit -append "REPLICAS = 20" submit.sub`).
+REPLICAS                = 10
+NS_PER_REPLICA          = 100
+queue $(REPLICAS)

@@ -33,7 +33,7 @@ version = { attr = "src.__version__" }
 min-session-version = 1
 max-session-version = 1
 categories = ["Molecular Dynamics", "Analysis"]
-classifiers = ["Development Status :: 2 - Pre-Alpha"]
+classifiers = ["Development Status :: 4 - Beta"]
 
 [tool.chimerax.command."vampnet fit"]
 category = "Molecular Dynamics"
@@ -41,7 +41,7 @@ description = "Fit a VAMPnet on the active trajectory or loaded ensemble"
 
 [tool.chimerax.command."vampnet load_ensemble"]
 category = "Molecular Dynamics"
-description = "Load a conformational ensemble from MD trajectory, AlphaFlow, or BioEmu output"
+description = "Load a conformational ensemble from MD trajectory or AlphaFlow / BioEmu / Boltz-2 / MarS-FM .npz output"
 
 [tool.chimerax.command."vampnet timescales"]
 category = "Molecular Dynamics"
