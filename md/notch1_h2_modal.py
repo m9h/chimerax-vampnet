@@ -196,6 +196,20 @@ def _analyze_one(system_dir, n_replicas, frame_stride, n_states, lag, epochs,
 
     hard, msm = _fit_vampnet(X, n_states, lag, epochs)
     pops = [(hard == s).mean() for s in range(n_states)]
+
+    # v0.4 item 2: Bayesian MSM bootstrap for confidence interval on the
+    # stationary distribution. Keeps the VAMPnet state assignment fixed
+    # (so the cost is only the MSM bootstrap, not refitting the network)
+    # but samples 100 transition matrices from the posterior given the
+    # observed count matrix. Gives a 95% CI on P(auto-inhibited).
+    from deeptime.markov.msm import BayesianMSM
+    try:
+        bmsm = BayesianMSM(lagtime=lag, n_samples=100).fit_fetch(hard)
+        stat_samples = np.stack([s.stationary_distribution
+                                  for s in bmsm.samples])  # (100, n_states)
+    except Exception as e:
+        print(f"  [warn] BayesianMSM bootstrap failed ({e}); skipping CI")
+        stat_samples = None
     try:
         its_frames = msm.timescales(k=n_states - 1)
         its_ns = [float(t) * ps_per_dcd_frame * frame_stride / 1000.0
@@ -225,6 +239,46 @@ def _analyze_one(system_dir, n_replicas, frame_stride, n_states, lag, epochs,
 
     p_autoinh = float(pops[autoinh_state])
     p_active = float(pops[active_state])
+
+    # Bootstrap CI on P(auto-inh). First-choice: Bayesian-MSM posterior
+    # samples. Fallback when the MSM collapses to fewer states than the
+    # VAMPnet found: per-replica block bootstrap over the hard
+    # assignments (no MSM, just empirical frequency).
+    # Only trust BayesianMSM when it produced the full n_states (no
+    # collapse). When fewer states present, the state-index mapping
+    # from MSM space to VAMPnet space is ambiguous; fall back.
+    bmsm_ok = (stat_samples is not None
+               and stat_samples.shape[1] == n_states)
+    if bmsm_ok:
+        p_autoinh_samples = stat_samples[:, autoinh_state]
+        bootstrap_method = "BayesianMSM"
+    else:
+        if stat_samples is not None:
+            print(f"  [note] BayesianMSM produced {stat_samples.shape[1]} "
+                  f"states (< autoinh_state {autoinh_state}); falling "
+                  f"back to per-replica block bootstrap")
+        # Per-replica block bootstrap: resample 3 replicas of 1000 frames
+        # with replacement, recompute P(auto-inh) each time.
+        rng_b = np.random.default_rng(1)
+        block = 1000  # frames per replica at stride=5
+        n_blocks = hard.shape[0] // block
+        p_autoinh_samples = []
+        for _ in range(200):
+            sel = rng_b.integers(0, n_blocks, size=n_blocks)
+            idx = np.concatenate([np.arange(b * block, (b + 1) * block)
+                                    for b in sel])
+            p_autoinh_samples.append((hard[idx] == autoinh_state).mean())
+        p_autoinh_samples = np.array(p_autoinh_samples)
+        bootstrap_method = "block(replica)"
+    p_autoinh_mean = float(p_autoinh_samples.mean())
+    p_autoinh_std = float(p_autoinh_samples.std())
+    p_autoinh_ci95 = [float(np.percentile(p_autoinh_samples, 2.5)),
+                       float(np.percentile(p_autoinh_samples, 97.5))]
+    print(f"  P(auto-inh): point {p_autoinh*100:.1f}%  "
+          f"posterior/bootstrap mean {p_autoinh_mean*100:.1f}% "
+          f"+/- {p_autoinh_std*100:.1f}%  "
+          f"95% CI [{p_autoinh_ci95[0]*100:.1f}%, {p_autoinh_ci95[1]*100:.1f}%] "
+          f"({bootstrap_method})")
 
     print(f"  state populations: " + ", ".join(f"{p*100:5.1f}%" for p in pops))
     print(f"  implied timescales: " + (", ".join(f"{t:.1f} ns" for t in its_ns) if its_ns else "(insufficient)"))
@@ -256,6 +310,10 @@ def _analyze_one(system_dir, n_replicas, frame_stride, n_states, lag, epochs,
         "activated_state":      int(active_state),
         "P_auto_inhibited":     p_autoinh,
         "P_activated":          p_active,
+        "P_auto_inhibited_bootstrap_method": bootstrap_method,
+        "P_auto_inhibited_bootstrap_mean":   p_autoinh_mean,
+        "P_auto_inhibited_bootstrap_std":    p_autoinh_std,
+        "P_auto_inhibited_bootstrap_ci95":   p_autoinh_ci95,
     }
 
 

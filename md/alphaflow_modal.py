@@ -27,26 +27,44 @@ import modal
 APP_NAME = "chimerax-vampnet-alphaflow"
 
 image = (
-    modal.Image.debian_slim(python_version="3.11")
+    # NGC PyTorch base: tuned CUDA + cuDNN + torch + NCCL + apex +
+    # flash_attn already installed (we'll patch openfold for any
+    # flash_attn API name changes). Same base as the v0.4 marsfm
+    # adapter — see md/marsfm_modal.py for the bisection that landed
+    # on this combination.
+    modal.Image.from_registry("nvcr.io/nvidia/pytorch:26.04-py3",
+                                add_python=None)
     .apt_install("git", "build-essential", "wget")
     .pip_install(
-        "torch==2.4.1",
-        "numpy<2",
-        "scipy",
         "biopython",
         "huggingface_hub",
         "einops",
-        "tqdm",
         "pyyaml",
         "ml-collections",
         "absl-py",
         "dm-tree",
-        index_url="https://download.pytorch.org/whl/cu124",
+        "pytorch-lightning>=2.4",
+        "deeptime",  # alphaflow's analysis helpers reach for it
+        "mdtraj",
+        # numpy/scipy/pandas/tqdm already in NGC pytorch image
     )
     .run_commands(
-        # AlphaFlow has its own OpenFold-derived stack baked in.
         "cd /opt && git clone https://github.com/bjing2016/alphaflow.git",
-        "cd /opt/alphaflow && pip install -e . --no-deps",
+        "cd /opt/alphaflow && (pip install -e . --no-deps || true)",
+        # AlphaFlow imports openfold (mmcif_parsing) — install upstream
+        # OpenFold at the pinned commit per the alphaflow README. The
+        # CUDA-kernel build often fails on different CUDA versions; we
+        # need only the python-level modules so build-isolation off +
+        # ignore build failures keeps the python tree available.
+        "pip install --no-build-isolation "
+        "'openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037' "
+        "|| pip install --no-deps --no-build-isolation "
+        "'openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037' "
+        "|| true",
+        # Patch flash_attn name change if needed.
+        "find /opt/alphaflow -name 'primitives.py' -o -name 'ipa.py' "
+        "| xargs sed -i 's/flash_attn_unpadded_kvpacked_func/"
+        "flash_attn_varlen_kvpacked_func/g' 2>/dev/null || true",
     )
 )
 
@@ -54,9 +72,17 @@ app = modal.App(APP_NAME, image=image)
 
 
 @app.function(gpu="H100", timeout=3600)
-def sample_remote(sequence: str, n_samples: int = 200,
-                   checkpoint: str = "alphaflow-md-base") -> bytes:
-    """Run AlphaFlow inference. Returns the .npz file as bytes."""
+def sample_remote(sequence: str, name: str = "query", n_samples: int = 200,
+                   checkpoint: str = "esmflow_md_base_202402") -> bytes:
+    """Run AlphaFlow (in ESMFlow mode) inference.
+
+    We use ESMFlow rather than the MSA-requiring AlphaFlow mode to
+    avoid the MSA preprocessing overhead. ESMFlow-MD is the
+    flow-matched ESMFold trained on the same MD trajectories as the
+    AlphaFlow-MD model. Single-sequence input; no MSA required.
+
+    Returns the packed ensemble as .npz bytes.
+    """
     import subprocess
     import tempfile
 
@@ -64,55 +90,59 @@ def sample_remote(sequence: str, n_samples: int = 200,
     import torch
     from huggingface_hub import hf_hub_download
 
-    print(f"[af] downloading checkpoint {checkpoint}")
-    ckpt_path = hf_hub_download(repo_id="bjing2016/alphaflow",
-                                 filename=f"{checkpoint}.pt",
+    print(f"[af] downloading checkpoint params/{checkpoint}.pt from bjing-mit/alphaflow")
+    ckpt_path = hf_hub_download(repo_id="bjing-mit/alphaflow",
+                                 filename=f"params/{checkpoint}.pt",
                                  cache_dir="/root/.cache/huggingface")
     print(f"[af] checkpoint at {ckpt_path}")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        # Write a single-protein FASTA the inference script expects.
-        fasta = tmp / "query.fasta"
-        fasta.write_text(f">query\n{sequence}\n")
+        # AlphaFlow's predict.py expects an --input_csv with name,seqres
+        # columns. For ESMFold mode no MSA directory is needed.
+        csv_path = tmp / "input.csv"
+        csv_path.write_text(f"name,seqres\n{name},{sequence}\n")
         out_dir = tmp / "out"
         out_dir.mkdir()
         cmd = [
             "python", "/opt/alphaflow/predict.py",
-            "--input_fasta", str(fasta),
+            "--mode", "esmfold",
+            "--input_csv", str(csv_path),
             "--samples", str(n_samples),
             "--weights", ckpt_path,
             "--outpdb", str(out_dir),
-            "--mode", "alphafold",   # MD-conditioned
         ]
         print(f"[af] {' '.join(cmd)}")
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, cwd="/opt/alphaflow")
 
-        # AlphaFlow writes one PDB per sample; aggregate into (N, A, 3).
-        from Bio.PDB import PDBParser
-        parser = PDBParser(QUIET=True)
+        # AlphaFlow writes a single multi-MODEL PDB per protein name.
+        # Use mdtraj which loads multi-model PDB as a trajectory.
+        import mdtraj as md
         sample_paths = sorted(out_dir.glob("*.pdb"))
         if not sample_paths:
             raise RuntimeError("AlphaFlow produced no PDB outputs")
-        all_coords = []
-        for p in sample_paths:
-            s = parser.get_structure(p.stem, str(p))
-            atoms = [a for a in s.get_atoms()]
-            coords = np.array([a.get_coord() for a in atoms], dtype="float32")
-            all_coords.append(coords)
-        coords = np.stack(all_coords, axis=0)
-        print(f"[af] ensemble shape: {coords.shape}")
+        pdb_path = sample_paths[0]
+        traj = md.load(str(pdb_path))
+        coords_all = (traj.xyz * 10.0).astype(np.float32)  # nm -> A
+        ca_indices = [a.index for a in traj.topology.atoms if a.name == "CA"]
+        coords_ca = coords_all[:, ca_indices, :]
+        print(f"[af] ensemble shape: all-atom {coords_all.shape}, "
+              f"CA-only {coords_ca.shape}")
 
-        out_npz = tmp / "ensemble.npz"
-        np.savez_compressed(out_npz, coords=coords)
-        return out_npz.read_bytes()
+        import io
+        buf = io.BytesIO()
+        np.savez_compressed(buf, coords=coords_all, coords_ca=coords_ca,
+                            seqres=np.array(sequence))
+        return buf.getvalue()
 
 
 @app.local_entrypoint()
-def sample(sequence: str, n: int = 200, out: str = "alphaflow_ensemble.npz",
-           checkpoint: str = "alphaflow-md-base"):
-    """Generate an AlphaFlow ensemble and save to a local .npz."""
-    print(f"[local] generating {n} samples for seq len {len(sequence)}")
-    data = sample_remote.remote(sequence, n, checkpoint)
+def sample(sequence: str, name: str = "query", n: int = 200,
+           out: str = "alphaflow_ensemble.npz",
+           checkpoint: str = "esmflow_md_base_202402"):
+    """Generate an ESMFlow-MD ensemble and save to a local .npz."""
+    print(f"[local] generating {n} samples for seq len {len(sequence)} "
+          f"(checkpoint {checkpoint})")
+    data = sample_remote.remote(sequence, name, n, checkpoint)
     Path(out).write_bytes(data)
     print(f"[local] wrote {out} ({len(data)/(1<<20):.1f} MB)")
