@@ -36,6 +36,11 @@ image = (
                                 add_python=None)
     .apt_install("git", "build-essential", "wget")
     .pip_install(
+        # OpenFold uses Bio.Data.SCOPData which was removed from
+        # biopython after 1.79; biopython 1.79 doesn't build for
+        # python 3.12 (no wheel). We patch openfold's import to use a
+        # local fallback in the sed step below instead of pinning the
+        # ancient biopython.
         "biopython",
         "huggingface_hub",
         "einops",
@@ -46,26 +51,48 @@ image = (
         "pytorch-lightning>=2.4",
         "deeptime",  # alphaflow's analysis helpers reach for it
         "mdtraj",
+        "modelcif",  # openfold writes mmcif via this
+        "fair-esm",  # required for ESMFold mode
         # numpy/scipy/pandas/tqdm already in NGC pytorch image
     )
     .run_commands(
         "cd /opt && git clone https://github.com/bjing2016/alphaflow.git",
         "cd /opt/alphaflow && (pip install -e . --no-deps || true)",
-        # AlphaFlow imports openfold (mmcif_parsing) — install upstream
-        # OpenFold at the pinned commit per the alphaflow README. The
-        # CUDA-kernel build often fails on different CUDA versions; we
-        # need only the python-level modules so build-isolation off +
-        # ignore build failures keeps the python tree available.
-        "pip install --no-build-isolation "
-        "'openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037' "
-        "|| pip install --no-deps --no-build-isolation "
-        "'openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037' "
-        "|| true",
+        # AlphaFlow imports openfold modules but the OpenFold wheel
+        # build requires a specific CUDA toolkit version that NGC PyTorch
+        # 26.04 doesn't match. We need only the python-level modules
+        # (e.g. openfold.data.mmcif_parsing), so clone the source and
+        # add it to PYTHONPATH instead.
+        "cd /opt && git clone --branch pl_upgrades "
+        "https://github.com/aqlaboratory/openfold.git openfold-src "
+        "|| git clone https://github.com/aqlaboratory/openfold.git openfold-src",
+        "cd /opt/openfold-src && git checkout 103d037 2>/dev/null || true",
         # Patch flash_attn name change if needed.
-        "find /opt/alphaflow -name 'primitives.py' -o -name 'ipa.py' "
+        "find /opt/alphaflow /opt/openfold-src -name 'primitives.py' "
+        "-o -name 'ipa.py' "
         "| xargs sed -i 's/flash_attn_unpadded_kvpacked_func/"
         "flash_attn_varlen_kvpacked_func/g' 2>/dev/null || true",
+        # Replace the dead SCOPData import with a shim that pulls the
+        # equivalent 3-to-1 mapping from Bio.SeqUtils.IUPACData.
+        "sed -i 's|from Bio.Data import SCOPData|"
+        "from Bio.SeqUtils import IUPACData as _Iupac\\n"
+        "class SCOPData:\\n"
+        "    protein_letters_3to1 = {k.upper(): v for k, v in "
+        "_Iupac.protein_letters_3to1_extended.items()}|' "
+        "/opt/openfold-src/openfold/data/mmcif_parsing.py 2>/dev/null || true",
+        # numpy 2.0 removed np.object, np.int, np.float, np.bool, np.long.
+        # OpenFold/AlphaFlow still uses the deprecated aliases in several
+        # places. Replace with the builtin equivalents across the python tree.
+        "find /opt/openfold-src /opt/alphaflow -name '*.py' "
+        "-exec sed -i "
+        "-e 's/np\\.object\\b/object/g' "
+        "-e 's/np\\.int\\b/int/g' "
+        "-e 's/np\\.float\\b/float/g' "
+        "-e 's/np\\.bool\\b/bool/g' "
+        "-e 's/np\\.long\\b/int/g' "
+        "{} \\; 2>/dev/null || true",
     )
+    .env({"PYTHONPATH": "/opt/openfold-src:/opt/alphaflow"})
 )
 
 app = modal.App(APP_NAME, image=image)

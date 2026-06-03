@@ -1,0 +1,51 @@
+{
+  "sources_loaded": [
+    "MD",
+    "MarS-FM",
+    "BioEmu"
+  ],
+  "n_frames_per_source": {
+    "MD": 1500,
+    "MarS-FM": 200,
+    "BioEmu": 169
+  },
+  "n_states": 4,
+  "state_breakdown": [
+    {
+      "state": 0,
+      "population_pct": 55.9657570893526,
+      "frac_of_src_in_state": {
+        "MD": 69.73333333333333,
+        "MarS-FM": 0.0,
+        "BioEmu": 0.0
+      }
+    },
+    {
+      "state": 1,
+      "population_pct": 13.001605136436597,
+      "frac_of_src_in_state": {
+        "MD": 2.8666666666666667,
+        "MarS-FM": 97.0,
+        "BioEmu": 3.5502958579881656
+      }
+    },
+    {
+      "state": 2,
+      "population_pct": 9.042268592830391,
+      "frac_of_src_in_state": {
+        "MD": 0.0,
+        "MarS-FM": 3.0,
+        "BioEmu": 96.44970414201184
+      }
+    },
+    {
+      "state": 3,
+      "population_pct": 21.990369181380416,
+      "frac_of_src_in_state": {
+        "MD": 27.400000000000002,
+        "MarS-FM": 0.0,
+        "BioEmu": 0.0
+      }
+    }
+  ]
+}
