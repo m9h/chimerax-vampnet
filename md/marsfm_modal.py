@@ -1,5 +1,24 @@
 """MarS-FM single-protein inference adapter on Modal.
 
+Self-contained environment recipe — each Modal adapter in md/ builds
+its own image rather than sharing a base, so dep collisions stay
+isolated to the tool that needs them.
+
+  Base image:   nvcr.io/nvidia/pytorch:26.04-py3 (NGC PyTorch)
+  Source repo:  github.com/m9h/mars-fm (fork @ phase1-multichain-api)
+                — patches: flash_attn varlen rename, atom14 leading
+                  singleton dim, multi-chain Phase-1 _chain_aware_pos_embed
+  Checkpoint:   valencelabs/mars-fm  → MD-CATH 450
+  GPU pin:      H100 (1)
+  Tested:       2026-05-26 — 200 samples Notch1 NEC apo ✓
+                2026-05-27 — 200 samples Notch1 NEC holo ✓ (via virtual concat)
+                2026-05-27 — Phase-1 multi-chain API patch falsified
+                  (deployed checkpoint has abs_pos_emb=False)
+
+This NGC stack works for MarS-FM because their model uses torch only
++ einops + a small flash_attn dep; the NGC bundled scipy/sklearn
+versions never collide with anything MarS-FM pulls in.
+
 Wraps Kapusniak et al. 2025 (arXiv:2509.24779; github.com/valence-labs/mars-fm)
 for inference on a single user-supplied PDB. Their `scripts/generate.py`
 is designed for bulk inference over an MD-CATH split; this adapter:

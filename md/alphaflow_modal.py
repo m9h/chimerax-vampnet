@@ -1,21 +1,37 @@
-"""AlphaFlow ensemble generation on Modal.
+"""AlphaFlow / ESMFlow ensemble generation on Modal — v0.5 micromamba rewrite.
 
-Wraps Bowen Jing et al.'s AlphaFlow (github.com/bjing2016/alphaflow,
-ICML 2024) to produce N conformational samples from a single protein
-sequence. Output is saved as an AlphaFlow-shape .npz that the bundle's
-`vampnet load_ensemble path source alphaflow` consumes natively.
+Self-contained environment recipe — each Modal adapter in md/ builds
+its own image rather than sharing a base, so dep collisions stay
+isolated to the tool that needs them.
 
-Inference settings follow the "alphaflow-md-base" recipe -- the
-checkpoint trained on MD-like ensemble distributions, which is the
-right comparison for chignolin/notch1 MD analyses.
+  Base image:   nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
+                (CUDA-11 era to match AlphaFlow's torch==1.12.1+cu113 pin)
+  Env manager:  micromamba creating /opt/conda/envs/af (python=3.9)
+  Pip recipe:   verbatim from upstream alphaflow README, see below
+  Source repo:  github.com/bjing2016/alphaflow (cloned to /opt/alphaflow)
+  Checkpoint:   bjing-mit/alphaflow → params/esmflow_md_base_202402.pt
+                (downloaded at runtime via huggingface_hub)
+  GPU pin:      A100-80GB
+  Tested:       2026-06-03 — smoke in progress (v0.5 first attempt
+                  after 9 failed NGC iterations in v0.4)
 
-  modal run alphaflow_modal.py::sample --sequence "YYDPETGTWY" --n 200 --out chignolin_af.npz
+Environment recipe (verbatim from upstream alphaflow README):
+  - python=3.9
+  - numpy==1.21.2 pandas==1.5.3
+  - torch==1.12.1+cu113 (legacy PyTorch wheel index)
+  - biopython==1.79 dm-tree==0.1.6 modelcif==0.7 ml-collections==0.1.0
+    scipy==1.7.1 absl-py einops
+  - pytorch_lightning==2.0.4 fair-esm mdtraj==1.9.9 wandb
+  - openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037
 
-Notes:
-  - AlphaFlow MD checkpoint is ~3 GB; the Modal image caches it across
-    runs in /root/.cache/huggingface so repeat invocations don't re-download.
-  - 200 samples on an H100 takes ~10 minutes for a small protein and
-    burns ~$1.5 of Modal credit.
+The v0.4 attempt (9 iterations) failed on NGC PyTorch's pre-bundled
+deps colliding with AlphaFlow's 2024-pinned conda env. v0.5 swaps to
+a bare CUDA-11.8 base + micromamba reproducing the upstream conda
+env verbatim, isolated from any other tool's deps.
+
+Usage:
+  modal run md/alphaflow_modal.py::sample --sequence "ACELPECQ..." \\
+      --name notch1_NEC --n 5 --out notch1_NEC_af_smoke.npz
 """
 
 from __future__ import annotations
@@ -26,113 +42,138 @@ import modal
 
 APP_NAME = "chimerax-vampnet-alphaflow"
 
+# Self-contained image: CUDA 11.8 base (contemporaneous with AlphaFlow's
+# torch 1.12.1+cu113 pin) + micromamba reproducing the upstream conda
+# env spec verbatim. No NGC PyTorch in this stack.
 image = (
-    # NGC PyTorch base: tuned CUDA + cuDNN + torch + NCCL + apex +
-    # flash_attn already installed (we'll patch openfold for any
-    # flash_attn API name changes). Same base as the v0.4 marsfm
-    # adapter — see md/marsfm_modal.py for the bisection that landed
-    # on this combination.
-    modal.Image.from_registry("nvcr.io/nvidia/pytorch:26.04-py3",
-                                add_python=None)
-    .apt_install("git", "build-essential", "wget")
-    .pip_install(
-        # OpenFold uses Bio.Data.SCOPData which was removed from
-        # biopython after 1.79; biopython 1.79 doesn't build for
-        # python 3.12 (no wheel). We patch openfold's import to use a
-        # local fallback in the sed step below instead of pinning the
-        # ancient biopython.
-        "biopython",
-        "huggingface_hub",
-        "einops",
-        "pyyaml",
-        "ml-collections",
-        "absl-py",
-        "dm-tree",
-        "pytorch-lightning>=2.4",
-        "deeptime",  # alphaflow's analysis helpers reach for it
-        "mdtraj",
-        "modelcif",  # openfold writes mmcif via this
-        "fair-esm",  # required for ESMFold mode
-        # numpy/scipy/pandas/tqdm already in NGC pytorch image
+    modal.Image.from_registry(
+        "nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04",
+        add_python="3.11",
     )
+    .apt_install("git", "build-essential", "wget", "curl", "bzip2",
+                  "ca-certificates", "zlib1g-dev")
     .run_commands(
-        "cd /opt && git clone https://github.com/bjing2016/alphaflow.git",
-        "cd /opt/alphaflow && (pip install -e . --no-deps || true)",
-        # AlphaFlow imports openfold modules but the OpenFold wheel
-        # build requires a specific CUDA toolkit version that NGC PyTorch
-        # 26.04 doesn't match. We need only the python-level modules
-        # (e.g. openfold.data.mmcif_parsing), so clone the source and
-        # add it to PYTHONPATH instead.
-        "cd /opt && git clone --branch pl_upgrades "
-        "https://github.com/aqlaboratory/openfold.git openfold-src "
-        "|| git clone https://github.com/aqlaboratory/openfold.git openfold-src",
-        "cd /opt/openfold-src && git checkout 103d037 2>/dev/null || true",
-        # Patch flash_attn name change if needed.
-        "find /opt/alphaflow /opt/openfold-src -name 'primitives.py' "
-        "-o -name 'ipa.py' "
-        "| xargs sed -i 's/flash_attn_unpadded_kvpacked_func/"
-        "flash_attn_varlen_kvpacked_func/g' 2>/dev/null || true",
-        # Replace the dead SCOPData import with a shim that pulls the
-        # equivalent 3-to-1 mapping from Bio.SeqUtils.IUPACData.
-        "sed -i 's|from Bio.Data import SCOPData|"
-        "from Bio.SeqUtils import IUPACData as _Iupac\\n"
-        "class SCOPData:\\n"
-        "    protein_letters_3to1 = {k.upper(): v for k, v in "
-        "_Iupac.protein_letters_3to1_extended.items()}|' "
-        "/opt/openfold-src/openfold/data/mmcif_parsing.py 2>/dev/null || true",
-        # numpy 2.0 removed np.object, np.int, np.float, np.bool, np.long.
-        # OpenFold/AlphaFlow still uses the deprecated aliases in several
-        # places. Replace with the builtin equivalents across the python tree.
-        "find /opt/openfold-src /opt/alphaflow -name '*.py' "
-        "-exec sed -i "
-        "-e 's/np\\.object\\b/object/g' "
-        "-e 's/np\\.int\\b/int/g' "
-        "-e 's/np\\.float\\b/float/g' "
-        "-e 's/np\\.bool\\b/bool/g' "
-        "-e 's/np\\.long\\b/int/g' "
-        "{} \\; 2>/dev/null || true",
+        # Install micromamba (same pattern as md/modal_md.py).
+        "mkdir -p /opt/conda/bin",
+        "wget -qO /tmp/mm.tar.bz2 "
+        "https://micro.mamba.pm/api/micromamba/linux-64/latest",
+        "tar -xvjf /tmp/mm.tar.bz2 -C /opt/conda bin/micromamba",
+        "rm /tmp/mm.tar.bz2",
     )
-    .env({"PYTHONPATH": "/opt/openfold-src:/opt/alphaflow"})
+    .env({
+        # System Python (3.11 via add_python) MUST come before the af
+        # env so Modal's runtime can import the modal package. The af
+        # env's python is invoked explicitly via /opt/conda/envs/af/bin/python
+        # in subprocesses — it does not need to be on PATH.
+        "PATH": "/usr/local/bin:/opt/conda/bin:/usr/local/cuda/bin:"
+                "/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "MAMBA_ROOT_PREFIX": "/opt/conda",
+        "CUDA_HOME": "/usr/local/cuda",
+        "LD_LIBRARY_PATH": "/usr/local/cuda/lib64",
+    })
+    .run_commands(
+        # Create the AlphaFlow env per the upstream README. mdtraj is
+        # installed via pip (not conda-forge) so it links against
+        # numpy 1.21.2; the conda-forge mdtraj wheel had been
+        # compiled against newer numpy ABI which broke at runtime.
+        # zlib1g-dev (apt-installed above) lets the pip mdtraj wheel
+        # build its xtc/trr/tng extensions.
+        "/opt/conda/bin/micromamba create -y -n af -c conda-forge "
+        "python=3.9 pip && /opt/conda/bin/micromamba clean -a -y",
+        # AlphaFlow numpy/pandas first.
+        "/opt/conda/envs/af/bin/pip install --no-cache-dir "
+        "'numpy==1.21.2' 'pandas==1.5.3'",
+        # torch pin: install via the legacy +cu113 wheel.
+        "/opt/conda/envs/af/bin/pip install --no-cache-dir "
+        "torch==1.12.1+cu113 "
+        "--extra-index-url https://download.pytorch.org/whl/cu113",
+        # Remaining alphaflow deps. Use --no-deps on pytorch_lightning
+        # to keep the resolver from upgrading torch to 2.x.
+        "/opt/conda/envs/af/bin/pip install --no-cache-dir "
+        "'biopython==1.79' 'dm-tree==0.1.6' 'modelcif==0.7' "
+        "'ml-collections==0.1.0' 'scipy==1.7.1' absl-py einops",
+        # pytorch_lightning + fair-esm + wandb installed individually
+        # with --no-deps for pytorch_lightning so torch stays at 1.12.1.
+        "/opt/conda/envs/af/bin/pip install --no-cache-dir --no-deps "
+        "'pytorch_lightning==2.0.4' 'lightning-utilities>=0.7.0' "
+        "torchmetrics fsspec 'PyYAML>=5.4' tqdm packaging "
+        "'typing_extensions>=4.0.0'",
+        "/opt/conda/envs/af/bin/pip install --no-cache-dir fair-esm wandb "
+        "'mdtraj==1.9.9'",
+        # OpenFold pinned commit + CUDA-kernel build. With CUDA 11.8
+        # available via the base image, the build should succeed; the
+        # fallback --no-deps install keeps the package importable even
+        # if its build step fails (alphaflow's predict.py imports it).
+        "/opt/conda/envs/af/bin/pip install --no-cache-dir "
+        "'openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037' "
+        "|| /opt/conda/envs/af/bin/pip install --no-cache-dir --no-deps "
+        "'openfold @ git+https://github.com/aqlaboratory/openfold.git@103d037'",
+        # Clone alphaflow.
+        "cd /opt && git clone https://github.com/bjing2016/alphaflow.git",
+        # Patch predict.py: upstream HEAD added a torch.load(
+        # weights_only=False) call that requires torch >=1.13, but
+        # we're pinned to 1.12.1+cu113 (which AlphaFlow's own README
+        # specifies). Drop the kwarg — the pre-2.5-era default
+        # behaviour is what we want.
+        "sed -i 's/, weights_only=False//' /opt/alphaflow/predict.py",
+        # Useful pip-installable but not in their conda env (we use it
+        # for npz packaging; openfold/alphaflow themselves don't need it).
+        "/opt/conda/envs/af/bin/pip install --no-cache-dir huggingface_hub",
+        # The Modal runtime runs sample_remote() in the system Python
+        # 3.11 (added via add_python=3.11), which needs its own numpy
+        # and mdtraj for the post-process (load PDBs from the af
+        # subprocess output + pack into npz). Lightweight installs.
+        "/usr/local/bin/pip install --no-cache-dir numpy mdtraj",
+    )
 )
+
+VOLUME_NAME = "chimerax-vampnet-md"
+vol = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 
 app = modal.App(APP_NAME, image=image)
 
 
-@app.function(gpu="H100", timeout=3600)
+@app.function(gpu="A100-80GB", timeout=2 * 3600,
+               volumes={"/vol": vol},
+               retries=0)
 def sample_remote(sequence: str, name: str = "query", n_samples: int = 200,
-                   checkpoint: str = "esmflow_md_base_202402") -> bytes:
-    """Run AlphaFlow (in ESMFlow mode) inference.
-
-    We use ESMFlow rather than the MSA-requiring AlphaFlow mode to
-    avoid the MSA preprocessing overhead. ESMFlow-MD is the
-    flow-matched ESMFold trained on the same MD trajectories as the
-    AlphaFlow-MD model. Single-sequence input; no MSA required.
-
-    Returns the packed ensemble as .npz bytes.
-    """
+                   checkpoint: str = "esmflow_md_base_202402",
+                   vol_output: str | None = None) -> bytes:
+    """Run AlphaFlow / ESMFlow-MD inference. Returns packed ensemble (.npz bytes)
+    AND writes them to the shared volume at /vol/<vol_output> if given,
+    so a re-launched local client can recover the result even after a
+    local-side SIGTERM."""
+    import io
+    import os
     import subprocess
+    import sys
     import tempfile
 
     import numpy as np
-    import torch
-    from huggingface_hub import hf_hub_download
 
+    # All subprocesses must use the env's python.
+    py = "/opt/conda/envs/af/bin/python"
+
+    # Download the checkpoint via the env's huggingface_hub.
     print(f"[af] downloading checkpoint params/{checkpoint}.pt from bjing-mit/alphaflow")
-    ckpt_path = hf_hub_download(repo_id="bjing-mit/alphaflow",
-                                 filename=f"params/{checkpoint}.pt",
-                                 cache_dir="/root/.cache/huggingface")
+    download_script = (
+        "from huggingface_hub import hf_hub_download; "
+        f"print(hf_hub_download(repo_id='bjing-mit/alphaflow', "
+        f"filename='params/{checkpoint}.pt', cache_dir='/root/.cache/huggingface'))"
+    )
+    r = subprocess.run([py, "-c", download_script],
+                       check=True, capture_output=True, text=True)
+    ckpt_path = r.stdout.strip().splitlines()[-1]
     print(f"[af] checkpoint at {ckpt_path}")
 
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        # AlphaFlow's predict.py expects an --input_csv with name,seqres
-        # columns. For ESMFold mode no MSA directory is needed.
+    with tempfile.TemporaryDirectory() as tmpd:
+        tmp = Path(tmpd)
         csv_path = tmp / "input.csv"
         csv_path.write_text(f"name,seqres\n{name},{sequence}\n")
         out_dir = tmp / "out"
         out_dir.mkdir()
         cmd = [
-            "python", "/opt/alphaflow/predict.py",
+            py, "predict.py",
             "--mode", "esmfold",
             "--input_csv", str(csv_path),
             "--samples", str(n_samples),
@@ -140,27 +181,40 @@ def sample_remote(sequence: str, name: str = "query", n_samples: int = 200,
             "--outpdb", str(out_dir),
         ]
         print(f"[af] {' '.join(cmd)}")
+        sys.stdout.flush()
         subprocess.run(cmd, check=True, cwd="/opt/alphaflow")
 
-        # AlphaFlow writes a single multi-MODEL PDB per protein name.
-        # Use mdtraj which loads multi-model PDB as a trajectory.
+        # AlphaFlow writes one multi-MODEL PDB per protein name.
         import mdtraj as md
         sample_paths = sorted(out_dir.glob("*.pdb"))
         if not sample_paths:
             raise RuntimeError("AlphaFlow produced no PDB outputs")
         pdb_path = sample_paths[0]
         traj = md.load(str(pdb_path))
-        coords_all = (traj.xyz * 10.0).astype(np.float32)  # nm -> A
+        coords_all = (traj.xyz * 10.0).astype(np.float32)
         ca_indices = [a.index for a in traj.topology.atoms if a.name == "CA"]
         coords_ca = coords_all[:, ca_indices, :]
-        print(f"[af] ensemble shape: all-atom {coords_all.shape}, "
-              f"CA-only {coords_ca.shape}")
+        print(f"[af] all-atom {coords_all.shape}, CA-only {coords_ca.shape}")
 
-        import io
         buf = io.BytesIO()
         np.savez_compressed(buf, coords=coords_all, coords_ca=coords_ca,
                             seqres=np.array(sequence))
-        return buf.getvalue()
+        data = buf.getvalue()
+
+        # Also write to the shared Modal volume if the caller gave a
+        # destination name there. This survives a local-side SIGTERM:
+        # the volume entry can be pulled by a fresh `modal volume get`.
+        if vol_output:
+            vol_path = Path("/vol") / vol_output
+            vol_path.parent.mkdir(parents=True, exist_ok=True)
+            vol_path.write_bytes(data)
+            try:
+                vol.commit()
+            except Exception as exc:
+                print(f"[af] volume commit failed: {exc}")
+            print(f"[af] wrote {vol_path} ({len(data)/(1<<20):.1f} MB) to volume")
+
+        return data
 
 
 @app.local_entrypoint()
@@ -170,6 +224,7 @@ def sample(sequence: str, name: str = "query", n: int = 200,
     """Generate an ESMFlow-MD ensemble and save to a local .npz."""
     print(f"[local] generating {n} samples for seq len {len(sequence)} "
           f"(checkpoint {checkpoint})")
-    data = sample_remote.remote(sequence, name, n, checkpoint)
+    vol_dest = f"alphaflow_outputs/{Path(out).name}"
+    data = sample_remote.remote(sequence, name, n, checkpoint, vol_dest)
     Path(out).write_bytes(data)
     print(f"[local] wrote {out} ({len(data)/(1<<20):.1f} MB)")

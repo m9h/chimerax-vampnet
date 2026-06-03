@@ -1,5 +1,27 @@
 """Boltz-2 ensemble generation on Modal.
 
+Self-contained environment recipe — each Modal adapter in md/ builds
+its own image rather than sharing a base, so dep collisions stay
+isolated to the tool that needs them.
+
+  Base image:   modal.Image.debian_slim(python_version=3.11)
+                (intentionally NOT NGC — NGC PyTorch ships a scipy
+                build that clashes with Boltz's pulled-in version;
+                see "Tested" below for the 4-iteration NGC trail)
+  Pip extras:   torch==2.4.1+cu124, boltz[cuda], biopython, mdtraj,
+                huggingface_hub, einops, numpy<2, scipy, pyyaml
+  Checkpoint:   Auto-downloaded by `boltz predict` from
+                huggingface.co/boltz-community (boltz2_conf + boltz2_aff)
+  GPU pin:      A100-80GB
+  Tested:       2026-06-03 — 5-sample smoke ✓ (shape (5, 174, 3) CA)
+                2026-06-03 — 200-sample run in progress
+
+The v0.4 NGC attempts (4 iterations) all failed on the
+scipy `_spropack` / `_promote` ABI cascade. The debian_slim path
+trades the NGC PyTorch build's tuned kernels for a clean ABI surface
+and "just works" — Boltz's bundled CUDA kernels are self-contained
+enough that we don't lose the perf the NGC base would have given us.
+
 Wraps `boltz predict` to generate N diffusion samples of a single
 protein sequence and pack them as an .npz the chimerax-vampnet
 bundle's `vampnet load_ensemble ... source bioemu` consumes (Boltz-2
@@ -23,22 +45,25 @@ import modal
 APP_NAME = "chimerax-vampnet-boltz"
 
 image = (
-    # NGC PyTorch base.
-    modal.Image.from_registry("nvcr.io/nvidia/pytorch:26.04-py3",
-                                add_python=None)
+    # v0.5: switched off NGC PyTorch (whose bundled scipy/scikit-learn
+    # ABIs collide with Boltz's pip-pulled versions) to a clean
+    # debian_slim + pip toolchain. Per the plan at
+    # ~/.claude/plans/twinkly-whistling-bonbon.md.
+    modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "build-essential", "wget")
-    .run_commands(
-        # boltz depends on a recent pyyaml but the NGC PyTorch image
-        # has a debian-installed pyyaml without a pip RECORD file,
-        # causing pip to refuse the upgrade. --ignore-installed pyyaml
-        # bypasses the conflict.
-        "pip install --ignore-installed pyyaml 'boltz[cuda]' "
-        "biopython mdtraj huggingface_hub einops",
-        # boltz pulls in a newer scipy whose _propack extension is
-        # missing the _spropack symbol (NGC scipy ABI mismatch).
-        # Force-reinstall scipy itself + scikit-learn to bind against
-        # the running BLAS/LAPACK consistently.
-        "pip install --force-reinstall --no-cache-dir scipy scikit-learn",
+    .pip_install(
+        "torch==2.4.1",
+        index_url="https://download.pytorch.org/whl/cu124",
+    )
+    .pip_install(
+        "boltz[cuda]",
+        "biopython",
+        "mdtraj",
+        "huggingface_hub",
+        "einops",
+        "numpy<2",
+        "scipy",
+        "pyyaml",
     )
 )
 

@@ -1,10 +1,12 @@
 """H3 multi-source joint VAMPnet analysis on Notch1 NEC.
 
-Combines apo NEC ensembles from four sources:
+Combines apo NEC ensembles from up to five sources (any subset that
+is present on disk):
   1. Classical MD (v0.3 COM-restrained, NEC subset of full NRR)
   2. MarS-FM (notch1_apo_NEC200_marsfm.npz)
   3. BioEmu (notch1_NEC_bioemu200.npz)
-  4. AlphaFlow / ESMFlow-MD (notch1_NEC_af200.npz)
+  4. Boltz-2 (notch1_NEC_boltz200.npz)
+  5. AlphaFlow / ESMFlow-MD (notch1_NEC_af200.npz)
 
 Fits a single VAMPnet on the union of all frames, then reports per-
 state source breakdown — the direct test of H3 ("which states does
@@ -101,7 +103,8 @@ def _fit_vampnet(X, n_states, lag, epochs=60):
         nn.Linear(128, n_states), nn.Softmax(dim=-1),
     )
     dataset = TrajectoryDataset(lagtime=lag, trajectory=X.astype("float32"))
-    loader = torch.utils.data.DataLoader(dataset, batch_size=512, shuffle=True)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=512, shuffle=True,
+                                          drop_last=True)
     net = VAMPNet(lobe=lobe, learning_rate=5e-4, device="cpu", epsilon=1e-3)
     model = net.fit(loader, n_epochs=epochs).fetch_model()
     soft = np.asarray(model.transform(X.astype("float32")))
@@ -138,6 +141,14 @@ def main():
     if bioemu is not None:
         sources["BioEmu"] = bioemu
         print(f"  BioEmu:     {bioemu.shape[0]} frames")
+
+    # Boltz-2
+    boltz = _load_source("Boltz-2", "../notch1_NEC_boltz200.npz", "coords_ca")
+    if boltz is None:
+        boltz = _load_source("Boltz-2", "notch1_NEC_boltz200.npz", "coords_ca")
+    if boltz is not None:
+        sources["Boltz-2"] = boltz
+        print(f"  Boltz-2:    {boltz.shape[0]} frames")
 
     # AlphaFlow / ESMFlow-MD
     af = _load_source("AlphaFlow", "../notch1_NEC_af200.npz", "coords_ca")

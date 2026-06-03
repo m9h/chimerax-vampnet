@@ -1,5 +1,21 @@
 """BioEmu (Microsoft Research) ensemble generation on Modal.
 
+Self-contained environment recipe — each Modal adapter in md/ builds
+its own image rather than sharing a base, so dep collisions stay
+isolated to the tool that needs them.
+
+  Base image:   nvcr.io/nvidia/pytorch:26.04-py3 (NGC PyTorch)
+  Pip extras:   bioemu[cuda] + biopython + mdtraj + huggingface_hub
+  Checkpoint:   microsoft/bioemu (v1.1, auto-downloaded on first call)
+  GPU pin:      A100-80GB
+  Tested:       2026-05-27 — Notch1 NEC apo, 169/200 frames passed
+                  quality filter, shape (169, 174, 3) ✓
+
+This NGC stack works for BioEmu because their pip metadata doesn't
+pin scipy/scikit-learn, so the NGC-bundled versions are accepted
+unchanged. Boltz, in contrast, force-installs newer versions and
+collides with NGC — Boltz uses debian_slim instead (see boltz_modal.py).
+
 Wraps the `bioemu` package's `bioemu.sample` CLI to generate a
 conformational ensemble for a single protein sequence. Output is a
 PDB topology + XTC trajectory; the adapter packs them into a single
