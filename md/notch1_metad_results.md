@@ -139,6 +139,51 @@ barrier itself.
 
 Figure: `md/figures/notch1_metad_fes.png` (3-walker mean ± 1σ).
 
+## Holo result (2 walkers × 15 ns)
+
+Holo metad was launched as 3 walkers × 20 ns on
+`notch1_holo_v3` (NEC chain A + NTM chain B + Fab L + Fab H,
+661 CAs total). The Fab-bound system runs at ~85 ns/day on Modal
+A100-80GB (vs apo's ~300 ns/day — the 3× more atoms slow OpenMM
+proportionally). All three walkers hit the @app.function
+`timeout=4*3600` ceiling at ~15 ns instead of finishing 20 ns.
+
+Walker 3 crashed at step 1251 with `DCDFile.__init__:
+struct.error: unpack requires a buffer of 4 bytes` —
+`dcd_mode = "a"` was chosen because a residual checkpoint.chk
+existed at the walker output path (apparently from a transient
+modal scheduling overlap), but the DCD file itself was missing,
+so the append-open failed. Walker 1 + 2 ran cleanly.
+
+### Per-walker convergence
+
+| Walker | Bias duration (ns) | Final CV (Å) | Max CV (Å) | Well re-crossings |
+|---|---:|---:|---:|---:|
+| 1 | 15.1 | 3.5 | 7.7 | 426 |
+| 2 | 14.0 | 18.8 | 23.7 | 92 |
+| 3 | (crashed) | — | — | — |
+
+Walker 1 stayed in / near the basin; walker 2 reached the
+dissociation regime past the barrier. Together they constrain
+the FES across the full CV range.
+
+### Merged holo FES
+
+| Coordinate | F (kJ/mol) | vs apo |
+|---|---:|---|
+| 4 Å (basin minimum) | 1.3 ± 0.9 | apo 0.4 ± 3.1 (~tie, both near 0) |
+| 11 Å (transition state) | **98.4** | apo 115.5 → **+17 kJ/mol higher in apo** |
+| 20 Å (dissociated) | **102.2** | apo 132.5 → **+30 kJ/mol higher in apo** |
+
+The holo barrier is **17 kJ/mol lower** than the apo barrier on
+the same CV. Holo's anti-NRR Fab destabilises the dissociation
+direction. See `md/notch1_h2_metad_reweight.md` for full
+discussion of the apo-vs-holo H2 implications, and
+`md/figures/notch1_metad_apo_vs_holo_fes.png` for the side-by-
+side FES.
+
+Figure: `md/figures/notch1_metad_holo_fes.png` (2-walker mean ± 1σ).
+
 ## Open / deferred
 
 - **Production FES analysis** (1D PMF reconstruction from HILLS via
