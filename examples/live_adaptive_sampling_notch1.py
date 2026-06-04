@@ -191,10 +191,22 @@ def _pull_replica(replica_idx: int) -> Path:
 
 
 def _extract_nec_cas(dcd_path: Path) -> np.ndarray:
-    """Re-extract chain A NEC CAs from a downloaded DCD."""
+    """Re-extract chain A NEC CAs from a downloaded DCD. The topology
+    MUST be the v0.3-prepped equilibrated.pdb (which is the topology
+    the DCD was written against) — atom counts in the pre-prep
+    apo PDB do not match. Pull it from the Modal volume on first use
+    and cache locally."""
     import mdtraj as md
-    eq_pdb = "/data/datasets/chimerax-vampnet/notch1_modal/notch1_apo/equilibrated.pdb"
-    traj = md.load(str(dcd_path), top=eq_pdb)
+    topo_local = Path("/tmp/notch1_v3_topo/equilibrated_v3.pdb")
+    if not topo_local.exists():
+        topo_local.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["modal", "volume", "get", "chimerax-vampnet-md",
+              "prepared/notch1_apo_v3/equilibrated.pdb",
+              str(topo_local), "--force"],
+            check=True, capture_output=True, text=True,
+        )
+    traj = md.load(str(dcd_path), top=str(topo_local))
     ca_chainA = traj.topology.select("name CA and chainid 0")
     if len(ca_chainA) != 174:
         ca_chainA = traj.topology.select("name CA and chainid 0")[:174]
