@@ -1,0 +1,51 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # The bundle's runtime deps. torch CPU-only is enough for the
+          # tests/ suite, which doesn't need CUDA. mdtraj is needed by
+          # test_chimerax_integration's helpers (skipped in CI anyway).
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+              "torch" "deeptime>=0.4" "mdtraj" "numpy<2" "scipy" "pytest"
+
+      - name: Run pytest (excludes ChimeraX integration test)
+        run: |
+          # test_chimerax_integration.py auto-skips when no chimerax
+          # binary is on PATH, so it's safe to include but we exclude
+          # it explicitly to keep CI deterministic.
+          pytest tests/ -v \
+            --ignore=tests/test_chimerax_integration.py
+
+      - name: Print Python + dep versions on failure
+        if: failure()
+        run: |
+          python --version
+          python -c "import torch; print('torch', torch.__version__)"
+          python -c "import deeptime; print('deeptime', deeptime.__version__)"
+          python -c "import mdtraj; print('mdtraj', mdtraj.__version__)"
+          python -c "import numpy; print('numpy', numpy.__version__)"

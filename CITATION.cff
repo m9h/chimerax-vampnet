@@ -1,0 +1,48 @@
+cff-version: 1.2.0
+title: "chimerax-vampnet: VAMPnet + MSM analysis of protein conformational landscapes in UCSF ChimeraX"
+message: "If you use this software, please cite it using the metadata in this file."
+type: software
+authors:
+  - family-names: Hough
+    given-names: Morgan
+    email: morgan.hough@gmail.com
+abstract: >
+  A UCSF ChimeraX bundle that brings VAMPnets (Mardt et al. 2018) and
+  Markov state modeling to protein conformational ensemble analysis.
+  Loads heterogeneous ensembles (MD, AlphaFlow, BioEmu, Boltz-2,
+  MarS-FM) on equal footing, fits a VAMPnet via deeptime, and surfaces
+  metastable states + transition rates as ChimeraX models, animations,
+  and structured CLI output. Every command returns JSON-serializable
+  data so an MCP-capable LLM agent (Claude Desktop, Cursor, Continue)
+  can drive an adaptive analysis loop via the included HTTP bridge.
+license: MIT
+repository-code: "https://github.com/m9h/chimerax-vampnet"
+url: "https://github.com/m9h/chimerax-vampnet"
+keywords:
+  - molecular-dynamics
+  - markov-state-models
+  - vampnet
+  - chimerax
+  - notch1
+  - alphaflow
+  - boltz-2
+  - bioemu
+  - mars-fm
+  - mcp
+version: "0.6.0"
+date-released: "2026-06-03"
+references:
+  - type: article
+    authors:
+      - family-names: Mardt
+        given-names: Andreas
+      - family-names: Pasquali
+        given-names: Luca
+      - family-names: Wu
+        given-names: Hao
+      - family-names: Noé
+        given-names: Frank
+    title: "VAMPnets for deep learning of molecular kinetics"
+    journal: "Nature Communications"
+    year: 2018
+    doi: "10.1038/s41467-017-02388-1"

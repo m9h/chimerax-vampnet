@@ -114,9 +114,11 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--system", default="notch1_apo_v3")
     p.add_argument("--walkers", type=int, nargs="+", default=[1, 2, 3])
-    p.add_argument("--cache-dir", type=Path,
-                    default=Path("/tmp/metad_postprocess"))
+    p.add_argument("--cache-dir", type=Path, default=None,
+                    help="default: /tmp/metad_postprocess_<system>")
     args = p.parse_args()
+    if args.cache_dir is None:
+        args.cache_dir = Path(f"/tmp/metad_postprocess_{args.system}")
 
     print("=" * 70)
     print(f"Metad FES post-processing — {args.system}, walkers {args.walkers}")
@@ -218,14 +220,25 @@ def main():
         ax2.grid(alpha=0.3)
         fig.suptitle(f"Metadynamics FES — {args.system}", fontsize=14)
         fig.tight_layout()
-        fig_path = FIG_DIR / "notch1_metad_fes.png"
+        # System-tagged output: apo writes notch1_metad_fes.png (the
+        # canonical name used in paper.tex); other systems get a
+        # suffix derived from the system name.
+        if args.system == "notch1_apo_v3":
+            fig_path = FIG_DIR / "notch1_metad_fes.png"
+        else:
+            tag = args.system.replace("notch1_", "").replace("_v3", "")
+            fig_path = FIG_DIR / f"notch1_metad_{tag}_fes.png"
         fig.savefig(fig_path, dpi=120, bbox_inches="tight")
         print(f"\nWrote {fig_path}")
     except ImportError:
         print("\n[warn] matplotlib not available, skipping figure")
 
-    # JSON dump.
-    json_path = ROOT / "md" / "notch1_metad_fes_data.json"
+    # JSON dump (system-tagged for non-apo systems).
+    if args.system == "notch1_apo_v3":
+        json_path = ROOT / "md" / "notch1_metad_fes_data.json"
+    else:
+        tag = args.system.replace("notch1_", "").replace("_v3", "")
+        json_path = ROOT / "md" / f"notch1_metad_{tag}_fes_data.json"
     json_path.write_text(json.dumps({
         "system": args.system,
         "walkers": list(walker_data.keys()),
