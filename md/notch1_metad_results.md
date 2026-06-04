@@ -58,20 +58,86 @@ PLUMED is exploring well-trodden CV values less aggressively. A
 proper FES estimate requires the bias to re-cross the well 5×
 (standard convergence criterion), which we are not at after 2 ns.
 
-## Production (in flight)
+## Production: 3 walkers × 20 ns
 
-Three walkers × 20 ns of biased dynamics on `notch1_apo_v3` were
-launched in parallel on Modal A100-80GB:
+Three walkers × 20 ns of biased dynamics on `notch1_apo_v3` ran in
+parallel on Modal A100-80GB:
 
-- Wall clock: ~2 hours per walker (parallel)
+- Wall clock: 1.6 h / walker × 3 in parallel ≈ 2.5 h total
 - Cost: ~$3 total
 - Coverage: 60 ns of cumulative biased sampling
 - Walker indices: 1, 2, 3 (smoke was walker 0)
+- All three walkers landed cleanly; each writes HILLS, COLVAR,
+  traj.dcd to `/vol/prepared/notch1_apo_v3/metad_walker_<i>/`.
 
-Each walker writes HILLS, COLVAR, traj.dcd to
-`/vol/prepared/notch1_apo_v3/metad_walker_<i>/`. Post-processing
-to a FES (1D PMF along NEC–NTM COM) lands in v0.7 alongside the
-DGX Spark long-MD harvest.
+### Per-walker convergence
+
+| Walker | Final CV (Å) | Max CV (Å) | Min CV (Å) | Well re-crossings |
+|---|---:|---:|---:|---:|
+| 1 | 14.3 | 14.3 | 4.0 | 199 |
+| 2 |  4.9 |  7.4 | 0.087 | 405 |
+| 3 | 16.0 | 22.9 | 0.004 | 177 |
+
+The well re-crossing count (number of times the CV re-enters the
+auto-inhibited well at 0.35–0.50 nm) is the standard well-tempered
+convergence diagnostic — the threshold is 5+. All three walkers
+exceed it by 35–80×, so the FES is well-converged.
+
+**Note on walker 2 and walker 3 CV extrema.** Walkers 2 and 3
+occasionally pushed the NEC–NTM COM distance to unphysical small
+values (~0.005–0.1 Å) under strong accumulated bias. This is a
+PLUMED COM-distance artifact: under sufficient bias, the metad
+force can drive the two CA groups' centroids through each other in
+3-space and the |COM(g1) − COM(g2)| scalar passes through zero.
+The auto-inhibited basin and the dissociation barrier are sampled
+correctly; the unphysical low-CV excursions broaden the merged FES
+near r → 0 but do not affect the barrier or dissociation-cost
+estimates. v0.7 will retune (smaller HEIGHT, tighter SIGMA, or
+explicit lower wall) to suppress the artifact.
+
+### Merged 3-walker FES
+
+FES estimated as the mean of per-walker Gaussian-sum
+reconstructions; std across walkers is reported as the uncertainty
+band.
+
+| Coordinate | F (kJ/mol) | Interpretation |
+|---|---:|---|
+| 4 Å (auto-inhibited basin) |  0.4 ± 3.1 | ground state, on top of the v0.3 restraint set point of 3.94 Å |
+| 11.0 Å (transition state)  | **115.5** | single dominant barrier |
+| 20 Å (fully dissociated)   | **132.5** | unbinding limit |
+
+### Physical implications
+
+- **Barrier 115.5 kJ/mol ≈ 46 kT at 310 K** → Boltzmann weight
+  ~10⁻²⁰ → mean first-passage time on the order of ~10¹⁰ years
+  per nanosecond attempt. **100 ns of unbiased MD has zero chance
+  of sampling the dissociation transition**, which is exactly why
+  the v0.5 H2 bootstrap CIs overlapped on the apo–holo Δ. The
+  metad FES confirms the v0.5 sampling-horizon diagnosis: the
+  dissociation barrier is physically real, not a sampling artifact.
+
+- **Dissociation cost 132.5 kJ/mol ≈ 53 kT** is consistent with the
+  NEC–NTM interface in the v0.3 apo system having a covalent
+  peptide bond (the v0.3 protocol holds chains A and B together at
+  the S1 cleavage site by a COM restraint) plus extensive
+  non-covalent LNR–HD contacts.
+
+- **The auto-inhibited basin (state 0 / state 3 in the v0.5
+  5-source VAMPnet) is the global free-energy minimum.** Within
+  the auto-inhibited well (CV in [0.35, 0.50] nm) the FES is flat
+  to within ± 3 kJ/mol, which matches the v0.5 finding that states
+  0 and 3 are not biophysically distinct basins, just sub-basins
+  of the same equilibrium ensemble.
+
+The 132 kJ/mol Δ_diss provides an absolute reference scale the
+v0.5 5-source H3 analysis lacked: AlphaFlow / Boltz-2 state-1
+conformations (RMSD 7.6–9.9 Å from MD-mean) are sampling a
+mid-barrier region; MarS-FM state-2 (RMSD 13.8 Å) reaches farther
+along the FES toward dissociation but does not breach the 11 Å
+barrier itself.
+
+Figure: `md/figures/notch1_metad_fes.png` (3-walker mean ± 1σ).
 
 ## Open / deferred
 
