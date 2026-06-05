@@ -55,6 +55,18 @@ def produce_metad(prepared_dir: Path, walker: int, steps: int,
     simulation = app.Simulation(pdb.topology, system, integrator, platform)
 
     chk_path = out_dir / "checkpoint.chk"
+    # Stale-checkpoint guard (v0.7): a checkpoint.chk can exist on the
+    # volume from a prior aborted run while the actual DCD does NOT
+    # exist (or is empty), because Modal commits the volume on function
+    # exit and OpenMM's CheckpointReporter fires on the first step but
+    # DCDReporter only opens the file at the first DCD interval. If we
+    # find a chk but no DCD, the chk is stale and a resume would crash
+    # at DCDReporter __init__ with "struct.error: unpack requires a
+    # buffer of 4 bytes" (the v0.6 holo walker-3 crash). Wipe it.
+    dcd_check = out_dir / "traj.dcd"
+    if chk_path.exists() and (not dcd_check.exists() or dcd_check.stat().st_size < 1024):
+        print(f"[metad] stale checkpoint at {chk_path} (no DCD or empty); deleting")
+        chk_path.unlink()
     if chk_path.exists():
         print(f"[metad] resuming from {chk_path}")
         simulation.loadCheckpoint(str(chk_path))

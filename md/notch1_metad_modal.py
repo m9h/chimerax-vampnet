@@ -137,7 +137,7 @@ FLUSH STRIDE={hills_stride}
 """.strip()
 
 
-@app.function(gpu="A100-80GB", timeout=4 * 3600,
+@app.function(gpu="A100-80GB", timeout=12 * 3600,
                volumes={VOL_MOUNT: vol})
 def run_remote(system: str, walker: int, ns: float = 100.0,
                 dt_fs: float = 4.0,
