@@ -1,12 +1,14 @@
 {
   "system": "hsp90_ntd",
   "sources_loaded": [
+    "MD",
     "MarS-FM",
     "BioEmu",
     "Boltz-2",
     "AlphaFlow"
   ],
   "n_frames_per_source": {
+    "MD": 45000,
     "MarS-FM": 200,
     "BioEmu": 188,
     "Boltz-2": 200,
@@ -17,40 +19,44 @@
   "state_breakdown": [
     {
       "state": 0,
-      "population_pct": 25.380710659898476,
+      "population_pct": 29.39853236655892,
       "frac_of_src_in_state": {
+        "MD": 29.91333333333333,
         "MarS-FM": 0.0,
-        "BioEmu": 0.0,
-        "Boltz-2": 0.0,
-        "AlphaFlow": 100.0
-      }
-    },
-    {
-      "state": 1,
-      "population_pct": 25.0,
-      "frac_of_src_in_state": {
-        "MarS-FM": 98.5,
         "BioEmu": 0.0,
         "Boltz-2": 0.0,
         "AlphaFlow": 0.0
       }
     },
     {
-      "state": 2,
-      "population_pct": 25.380710659898476,
+      "state": 1,
+      "population_pct": 22.516816633178998,
       "frac_of_src_in_state": {
+        "MD": 21.36888888888889,
+        "MarS-FM": 53.0,
+        "BioEmu": 100.0,
+        "Boltz-2": 100.0,
+        "AlphaFlow": 100.0
+      }
+    },
+    {
+      "state": 2,
+      "population_pct": 31.25272997291867,
+      "frac_of_src_in_state": {
+        "MD": 31.8,
         "MarS-FM": 0.0,
         "BioEmu": 0.0,
-        "Boltz-2": 100.0,
+        "Boltz-2": 0.0,
         "AlphaFlow": 0.0
       }
     },
     {
       "state": 3,
-      "population_pct": 24.238578680203045,
+      "population_pct": 16.83192102734341,
       "frac_of_src_in_state": {
-        "MarS-FM": 1.5,
-        "BioEmu": 100.0,
+        "MD": 16.91777777777778,
+        "MarS-FM": 47.0,
+        "BioEmu": 0.0,
         "Boltz-2": 0.0,
         "AlphaFlow": 0.0
       }

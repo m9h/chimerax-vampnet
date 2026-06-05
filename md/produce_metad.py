@@ -55,17 +55,21 @@ def produce_metad(prepared_dir: Path, walker: int, steps: int,
     simulation = app.Simulation(pdb.topology, system, integrator, platform)
 
     chk_path = out_dir / "checkpoint.chk"
-    # Stale-checkpoint guard (v0.7): a checkpoint.chk can exist on the
-    # volume from a prior aborted run while the actual DCD does NOT
-    # exist (or is empty), because Modal commits the volume on function
-    # exit and OpenMM's CheckpointReporter fires on the first step but
-    # DCDReporter only opens the file at the first DCD interval. If we
-    # find a chk but no DCD, the chk is stale and a resume would crash
-    # at DCDReporter __init__ with "struct.error: unpack requires a
-    # buffer of 4 bytes" (the v0.6 holo walker-3 crash). Wipe it.
-    dcd_check = out_dir / "traj.dcd"
-    if chk_path.exists() and (not dcd_check.exists() or dcd_check.stat().st_size < 1024):
-        print(f"[metad] stale checkpoint at {chk_path} (no DCD or empty); deleting")
+    # Stale-checkpoint guard (v0.7, refined v0.7.1 after a false-
+    # positive wipe of 3 actively-running holo walkers): a fresh-launch
+    # crash from a stale chk shows as chk+no-HILLS (PLUMED hasn't yet
+    # deposited anything to volume). A Modal preemption mid-run shows
+    # as chk+HILLS-with-content (PLUMED has been writing). Only the
+    # former is unsafe to resume from. Check HILLS, not DCD: the DCD
+    # commit cadence is much slower than HILLS so DCD can be missing
+    # even when the run is healthy.
+    hills_path = out_dir / "HILLS"
+    looks_truly_stale = (
+        chk_path.exists()
+        and (not hills_path.exists() or hills_path.stat().st_size < 200)
+    )
+    if looks_truly_stale:
+        print(f"[metad] stale checkpoint at {chk_path} (HILLS missing/empty); deleting")
         chk_path.unlink()
     if chk_path.exists():
         print(f"[metad] resuming from {chk_path}")

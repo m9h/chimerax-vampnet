@@ -1,0 +1,208 @@
+{
+  "sources": [
+    "MD",
+    "MarS-FM",
+    "BioEmu",
+    "Boltz-2",
+    "AlphaFlow"
+  ],
+  "n_frames_per_source": {
+    "MD": 45000,
+    "MarS-FM": 200,
+    "BioEmu": 188,
+    "Boltz-2": 200,
+    "AlphaFlow": 200
+  },
+  "feature_breakdown": [
+    {
+      "state": 0,
+      "source": "MD",
+      "n_frames": 13461,
+      "Rg_A_mean": 16.61026954650879,
+      "Rg_A_std": 0.07829795032739639,
+      "end_to_end_A_mean": 40.2116813659668,
+      "end_to_end_A_std": 3.0490503311157227,
+      "ATP-pocket_COM_A_mean": 21.15266990661621,
+      "ATP-pocket_COM_A_std": 0.7180307507514954,
+      "lid-loop_Rg_A_mean": 8.999078750610352,
+      "lid-loop_Rg_A_std": 0.1452924758195877,
+      "RMSD_to_1YER_A_mean": 1.5246286392211914,
+      "RMSD_to_1YER_A_std": 0.18039673566818237
+    },
+    {
+      "state": 0,
+      "source": "MarS-FM",
+      "n_frames": 0
+    },
+    {
+      "state": 0,
+      "source": "BioEmu",
+      "n_frames": 0
+    },
+    {
+      "state": 0,
+      "source": "Boltz-2",
+      "n_frames": 0
+    },
+    {
+      "state": 0,
+      "source": "AlphaFlow",
+      "n_frames": 0
+    },
+    {
+      "state": 1,
+      "source": "MD",
+      "n_frames": 9616,
+      "Rg_A_mean": 16.747928619384766,
+      "Rg_A_std": 0.11468034237623215,
+      "end_to_end_A_mean": 36.00104522705078,
+      "end_to_end_A_std": 2.518077850341797,
+      "ATP-pocket_COM_A_mean": 22.274944305419922,
+      "ATP-pocket_COM_A_std": 1.0466644763946533,
+      "lid-loop_Rg_A_mean": 8.963164329528809,
+      "lid-loop_Rg_A_std": 0.17448420822620392,
+      "RMSD_to_1YER_A_mean": 1.7158796787261963,
+      "RMSD_to_1YER_A_std": 0.369846910238266
+    },
+    {
+      "state": 1,
+      "source": "MarS-FM",
+      "n_frames": 106,
+      "Rg_A_mean": 16.834726333618164,
+      "Rg_A_std": 0.7849574685096741,
+      "end_to_end_A_mean": 34.420372009277344,
+      "end_to_end_A_std": 9.229612350463867,
+      "ATP-pocket_COM_A_mean": 22.065906524658203,
+      "ATP-pocket_COM_A_std": 6.249645233154297,
+      "lid-loop_Rg_A_mean": 9.178162574768066,
+      "lid-loop_Rg_A_std": 1.2284499406814575,
+      "RMSD_to_1YER_A_mean": 7.623573303222656,
+      "RMSD_to_1YER_A_std": 2.55792236328125
+    },
+    {
+      "state": 1,
+      "source": "BioEmu",
+      "n_frames": 188,
+      "Rg_A_mean": 16.631561279296875,
+      "Rg_A_std": 0.26071545481681824,
+      "end_to_end_A_mean": 33.43396759033203,
+      "end_to_end_A_std": 3.1815948486328125,
+      "ATP-pocket_COM_A_mean": 21.72028160095215,
+      "ATP-pocket_COM_A_std": 1.7031543254852295,
+      "lid-loop_Rg_A_mean": 8.932294845581055,
+      "lid-loop_Rg_A_std": 0.8417147397994995,
+      "RMSD_to_1YER_A_mean": 3.0379397869110107,
+      "RMSD_to_1YER_A_std": 0.8538371324539185
+    },
+    {
+      "state": 1,
+      "source": "Boltz-2",
+      "n_frames": 200,
+      "Rg_A_mean": 16.376750946044922,
+      "Rg_A_std": 0.04319453239440918,
+      "end_to_end_A_mean": 33.364105224609375,
+      "end_to_end_A_std": 0.5160941481590271,
+      "ATP-pocket_COM_A_mean": 22.184385299682617,
+      "ATP-pocket_COM_A_std": 0.2627142071723938,
+      "lid-loop_Rg_A_mean": 9.037481307983398,
+      "lid-loop_Rg_A_std": 0.16456685960292816,
+      "RMSD_to_1YER_A_mean": 1.3314776420593262,
+      "RMSD_to_1YER_A_std": 0.11343555897474289
+    },
+    {
+      "state": 1,
+      "source": "AlphaFlow",
+      "n_frames": 200,
+      "Rg_A_mean": 16.69635772705078,
+      "Rg_A_std": 0.1260135918855667,
+      "end_to_end_A_mean": 33.678016662597656,
+      "end_to_end_A_std": 1.8707354068756104,
+      "ATP-pocket_COM_A_mean": 22.462568283081055,
+      "ATP-pocket_COM_A_std": 1.1741434335708618,
+      "lid-loop_Rg_A_mean": 9.032052040100098,
+      "lid-loop_Rg_A_std": 0.6416826844215393,
+      "RMSD_to_1YER_A_mean": 2.3383703231811523,
+      "RMSD_to_1YER_A_std": 0.344857394695282
+    },
+    {
+      "state": 2,
+      "source": "MD",
+      "n_frames": 14310,
+      "Rg_A_mean": 16.57213020324707,
+      "Rg_A_std": 0.10541609674692154,
+      "end_to_end_A_mean": 35.85641098022461,
+      "end_to_end_A_std": 2.468707799911499,
+      "ATP-pocket_COM_A_mean": 21.085098266601562,
+      "ATP-pocket_COM_A_std": 0.8045373558998108,
+      "lid-loop_Rg_A_mean": 9.276782035827637,
+      "lid-loop_Rg_A_std": 0.21402408182621002,
+      "RMSD_to_1YER_A_mean": 1.5060033798217773,
+      "RMSD_to_1YER_A_std": 0.2301524132490158
+    },
+    {
+      "state": 2,
+      "source": "MarS-FM",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "BioEmu",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "Boltz-2",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "AlphaFlow",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "MD",
+      "n_frames": 7613,
+      "Rg_A_mean": 16.676733016967773,
+      "Rg_A_std": 0.09121787548065186,
+      "end_to_end_A_mean": 41.23429489135742,
+      "end_to_end_A_std": 2.9754037857055664,
+      "ATP-pocket_COM_A_mean": 21.481361389160156,
+      "ATP-pocket_COM_A_std": 1.0458979606628418,
+      "lid-loop_Rg_A_mean": 9.443119049072266,
+      "lid-loop_Rg_A_std": 0.24637584388256073,
+      "RMSD_to_1YER_A_mean": 2.3657851219177246,
+      "RMSD_to_1YER_A_std": 0.1455705314874649
+    },
+    {
+      "state": 3,
+      "source": "MarS-FM",
+      "n_frames": 94,
+      "Rg_A_mean": 16.644445419311523,
+      "Rg_A_std": 0.7593228220939636,
+      "end_to_end_A_mean": 34.75942611694336,
+      "end_to_end_A_std": 8.301798820495605,
+      "ATP-pocket_COM_A_mean": 22.365177154541016,
+      "ATP-pocket_COM_A_std": 5.216485023498535,
+      "lid-loop_Rg_A_mean": 9.407461166381836,
+      "lid-loop_Rg_A_std": 1.2351243495941162,
+      "RMSD_to_1YER_A_mean": 6.978708267211914,
+      "RMSD_to_1YER_A_std": 2.3082950115203857
+    },
+    {
+      "state": 3,
+      "source": "BioEmu",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "Boltz-2",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "AlphaFlow",
+      "n_frames": 0
+    }
+  ]
+}
