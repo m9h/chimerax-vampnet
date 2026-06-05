@@ -222,3 +222,42 @@ packaging gap.
 - Smoke 2 ns walker: ~$0.30
 - Production 3 walkers × 20 ns: ~$3.00 (in flight)
 - Total W3c v0.6 spend: ~$5
+
+## v0.7 update: holo metad walker 4 added (3-walker FES)
+
+v0.7 W4b launched 3 new holo walkers (indices 4-6) at 30 ns each
+with the 12 h function timeout. Modal preempted walkers 4-6
+mid-run and the v0.6 stale-checkpoint guard incorrectly classified
+the preempt-restart state as "needs reset" -- wiping ~30 ns of
+walker-5 and walker-6 sampling. Walker 4 recovered to 28 ns of
+post-restart bias; walkers 5 and 6 only managed 5 ns and 1 ns.
+
+The v0.7 guard fix (md/produce_metad.py): check HILLS file content
+rather than DCD existence -- HILLS commits faster than DCD, so a
+fresh-launch crash shows as chk+no-HILLS while a preempt-restart
+shows as chk+HILLS-with-content.
+
+Merged holo FES across v0.6 walker 1 + walker 2 + v0.7 walker 4
+(53 ns of cumulative biased dynamics):
+
+| Coordinate | F holo (kJ/mol) | F apo (kJ/mol) | ΔΔG (apo - holo) |
+|---|---:|---:|---:|
+| 4 Å (basin)    | 0.0 ± 1.1  | 0.4 ± 3.1  | ~0   |
+| 11 Å (barrier) | **86.7**   | 115.5      | **+28.8** kJ/mol |
+| 20 Å (diss)    | **76.3**   | 132.5      | **+56.2** kJ/mol |
+
+**ΔΔG_barrier = +28.8 kJ/mol** (v0.6 had +17.2)
+**ΔΔG_dissociated = +56.2 kJ/mol** (v0.6 had +30.3)
+
+The direction of the v0.6 H2 sign-flip is preserved and the
+magnitude widens with more sampling. Anti-NRR Fab destabilises
+both the dissociation barrier and the fully-dissociated state on
+the v0.3 COM-restrained Notch1 system.
+
+Walker 4's much higher mid-run dissociated F estimate (76 kJ/mol
+vs v0.6's 102) is the dominant change -- walker 4 spent extensive
+time in the dissociated regime (CV reached 1.6 nm = 16 Å) and
+pinned down the dissociated FES more accurately than the v0.6
+walkers, which only briefly peeked into that region.
+
+Figure: `md/figures/notch1_metad_apo_vs_holo_fes.png` (updated v0.7).
