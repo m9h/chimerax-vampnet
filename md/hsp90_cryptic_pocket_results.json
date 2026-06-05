@@ -1,0 +1,232 @@
+{
+  "sources": [
+    "MD_apo",
+    "MD_holo",
+    "MarS-FM",
+    "BioEmu",
+    "Boltz-2",
+    "AlphaFlow"
+  ],
+  "n_frames_per_source": {
+    "MD_apo": 45000,
+    "MD_holo": 45000,
+    "MarS-FM": 200,
+    "BioEmu": 188,
+    "Boltz-2": 200,
+    "AlphaFlow": 200
+  },
+  "pocket_metrics": [
+    {
+      "state": 0,
+      "source": "MD_apo",
+      "n_frames": 5534,
+      "lid-floor_COM_A_mean": 15.644195556640625,
+      "lid-floor_COM_A_std": 0.6102623343467712,
+      "Asn51-Thr109_A_mean": 10.295987129211426,
+      "Asn51-Thr109_A_std": 1.3112972974777222,
+      "lid-Rg_A_mean": 7.924408912658691,
+      "lid-Rg_A_std": 0.31543436646461487,
+      "Asn51-Thr115_A_mean": 15.513168334960938,
+      "Asn51-Thr115_A_std": 1.084782600402832
+    },
+    {
+      "state": 0,
+      "source": "MD_holo",
+      "n_frames": 24622,
+      "lid-floor_COM_A_mean": 15.866913795471191,
+      "lid-floor_COM_A_std": 0.837550938129425,
+      "Asn51-Thr109_A_mean": 16.635387420654297,
+      "Asn51-Thr109_A_std": 0.8905074000358582,
+      "lid-Rg_A_mean": 7.928298473358154,
+      "lid-Rg_A_std": 0.2188328057527542,
+      "Asn51-Thr115_A_mean": 14.449366569519043,
+      "Asn51-Thr115_A_std": 0.9319225549697876
+    },
+    {
+      "state": 0,
+      "source": "MarS-FM",
+      "n_frames": 0
+    },
+    {
+      "state": 0,
+      "source": "BioEmu",
+      "n_frames": 0
+    },
+    {
+      "state": 0,
+      "source": "Boltz-2",
+      "n_frames": 0
+    },
+    {
+      "state": 0,
+      "source": "AlphaFlow",
+      "n_frames": 0
+    },
+    {
+      "state": 1,
+      "source": "MD_apo",
+      "n_frames": 25012,
+      "lid-floor_COM_A_mean": 16.274229049682617,
+      "lid-floor_COM_A_std": 0.5712624192237854,
+      "Asn51-Thr109_A_mean": 10.055490493774414,
+      "Asn51-Thr109_A_std": 0.8926489353179932,
+      "lid-Rg_A_mean": 7.371803283691406,
+      "lid-Rg_A_std": 0.17981816828250885,
+      "Asn51-Thr115_A_mean": 16.557424545288086,
+      "Asn51-Thr115_A_std": 0.700633704662323
+    },
+    {
+      "state": 1,
+      "source": "MD_holo",
+      "n_frames": 86,
+      "lid-floor_COM_A_mean": 15.362700462341309,
+      "lid-floor_COM_A_std": 0.33121341466903687,
+      "Asn51-Thr109_A_mean": 15.304242134094238,
+      "Asn51-Thr109_A_std": 0.3694564700126648,
+      "lid-Rg_A_mean": 7.77821159362793,
+      "lid-Rg_A_std": 0.13840892910957336,
+      "Asn51-Thr115_A_mean": 13.842267990112305,
+      "Asn51-Thr115_A_std": 0.36186453700065613
+    },
+    {
+      "state": 1,
+      "source": "MarS-FM",
+      "n_frames": 200,
+      "lid-floor_COM_A_mean": 18.395105361938477,
+      "lid-floor_COM_A_std": 5.764881134033203,
+      "Asn51-Thr109_A_mean": 16.719324111938477,
+      "Asn51-Thr109_A_std": 7.028447151184082,
+      "lid-Rg_A_mean": 7.826949596405029,
+      "lid-Rg_A_std": 1.0567423105239868,
+      "Asn51-Thr115_A_mean": 18.929832458496094,
+      "Asn51-Thr115_A_std": 6.3269362449646
+    },
+    {
+      "state": 1,
+      "source": "BioEmu",
+      "n_frames": 188,
+      "lid-floor_COM_A_mean": 17.30156135559082,
+      "lid-floor_COM_A_std": 1.0854606628417969,
+      "Asn51-Thr109_A_mean": 16.092836380004883,
+      "Asn51-Thr109_A_std": 1.2150901556015015,
+      "lid-Rg_A_mean": 7.5088372230529785,
+      "lid-Rg_A_std": 0.7073127031326294,
+      "Asn51-Thr115_A_mean": 17.05097770690918,
+      "Asn51-Thr115_A_std": 3.3599910736083984
+    },
+    {
+      "state": 1,
+      "source": "Boltz-2",
+      "n_frames": 200,
+      "lid-floor_COM_A_mean": 17.09115219116211,
+      "lid-floor_COM_A_std": 0.22151215374469757,
+      "Asn51-Thr109_A_mean": 17.96233367919922,
+      "Asn51-Thr109_A_std": 0.49149391055107117,
+      "lid-Rg_A_mean": 7.416830062866211,
+      "lid-Rg_A_std": 0.14654824137687683,
+      "Asn51-Thr115_A_mean": 16.442983627319336,
+      "Asn51-Thr115_A_std": 0.3300526738166809
+    },
+    {
+      "state": 1,
+      "source": "AlphaFlow",
+      "n_frames": 200,
+      "lid-floor_COM_A_mean": 17.779237747192383,
+      "lid-floor_COM_A_std": 0.8898470997810364,
+      "Asn51-Thr109_A_mean": 16.8309268951416,
+      "Asn51-Thr109_A_std": 1.0385605096817017,
+      "lid-Rg_A_mean": 7.531569957733154,
+      "lid-Rg_A_std": 0.5761380195617676,
+      "Asn51-Thr115_A_mean": 17.749357223510742,
+      "Asn51-Thr115_A_std": 2.1034209728240967
+    },
+    {
+      "state": 2,
+      "source": "MD_apo",
+      "n_frames": 14454,
+      "lid-floor_COM_A_mean": 15.877397537231445,
+      "lid-floor_COM_A_std": 0.6129512786865234,
+      "Asn51-Thr109_A_mean": 9.262853622436523,
+      "Asn51-Thr109_A_std": 0.6251516342163086,
+      "lid-Rg_A_mean": 7.565664291381836,
+      "lid-Rg_A_std": 0.17355303466320038,
+      "Asn51-Thr115_A_mean": 16.60441017150879,
+      "Asn51-Thr115_A_std": 1.0176897048950195
+    },
+    {
+      "state": 2,
+      "source": "MD_holo",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "MarS-FM",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "BioEmu",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "Boltz-2",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "AlphaFlow",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "MD_apo",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "MD_holo",
+      "n_frames": 20292,
+      "lid-floor_COM_A_mean": 15.296982765197754,
+      "lid-floor_COM_A_std": 0.6391503214836121,
+      "Asn51-Thr109_A_mean": 15.440693855285645,
+      "Asn51-Thr109_A_std": 0.7262564301490784,
+      "lid-Rg_A_mean": 7.86951208114624,
+      "lid-Rg_A_std": 0.30807679891586304,
+      "Asn51-Thr115_A_mean": 14.273487091064453,
+      "Asn51-Thr115_A_std": 1.3521037101745605
+    },
+    {
+      "state": 3,
+      "source": "MarS-FM",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "BioEmu",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "Boltz-2",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "AlphaFlow",
+      "n_frames": 0
+    }
+  ],
+  "definitions": {
+    "LID_LOOP_local_idx": [
+      83,
+      99
+    ],
+    "POCKET_FLOOR_local_idx": [
+      33,
+      44
+    ],
+    "IDX_ASN51_local": 34,
+    "IDX_THR109_local": 92
+  }
+}
