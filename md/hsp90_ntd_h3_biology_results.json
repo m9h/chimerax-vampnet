@@ -1,0 +1,160 @@
+{
+  "sources": [
+    "MarS-FM",
+    "BioEmu",
+    "Boltz-2",
+    "AlphaFlow"
+  ],
+  "n_frames_per_source": {
+    "MarS-FM": 200,
+    "BioEmu": 188,
+    "Boltz-2": 200,
+    "AlphaFlow": 200
+  },
+  "feature_breakdown": [
+    {
+      "state": 0,
+      "source": "MarS-FM",
+      "n_frames": 0
+    },
+    {
+      "state": 0,
+      "source": "BioEmu",
+      "n_frames": 0
+    },
+    {
+      "state": 0,
+      "source": "Boltz-2",
+      "n_frames": 0
+    },
+    {
+      "state": 0,
+      "source": "AlphaFlow",
+      "n_frames": 200,
+      "Rg_A_mean": 16.69635772705078,
+      "Rg_A_std": 0.1260135918855667,
+      "end_to_end_A_mean": 33.678016662597656,
+      "end_to_end_A_std": 1.8707354068756104,
+      "ATP-pocket_COM_A_mean": 22.462568283081055,
+      "ATP-pocket_COM_A_std": 1.1741434335708618,
+      "lid-loop_Rg_A_mean": 9.032052040100098,
+      "lid-loop_Rg_A_std": 0.6416826844215393,
+      "RMSD_to_1YER_A_mean": 2.3383702597142904,
+      "RMSD_to_1YER_A_std": 0.34485737561019797
+    },
+    {
+      "state": 1,
+      "source": "MarS-FM",
+      "n_frames": 197,
+      "Rg_A_mean": 16.744857788085938,
+      "Rg_A_std": 0.7845823764801025,
+      "end_to_end_A_mean": 34.75002670288086,
+      "end_to_end_A_std": 8.702703475952148,
+      "ATP-pocket_COM_A_mean": 22.183916091918945,
+      "ATP-pocket_COM_A_std": 5.821725845336914,
+      "lid-loop_Rg_A_mean": 9.252007484436035,
+      "lid-loop_Rg_A_std": 1.182934045791626,
+      "RMSD_to_1YER_A_mean": 7.3219364189793446,
+      "RMSD_to_1YER_A_std": 2.4599604564463693
+    },
+    {
+      "state": 1,
+      "source": "BioEmu",
+      "n_frames": 0
+    },
+    {
+      "state": 1,
+      "source": "Boltz-2",
+      "n_frames": 0
+    },
+    {
+      "state": 1,
+      "source": "AlphaFlow",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "MarS-FM",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "BioEmu",
+      "n_frames": 0
+    },
+    {
+      "state": 2,
+      "source": "Boltz-2",
+      "n_frames": 200,
+      "Rg_A_mean": 16.376750946044922,
+      "Rg_A_std": 0.04319453239440918,
+      "end_to_end_A_mean": 33.364105224609375,
+      "end_to_end_A_std": 0.5160941481590271,
+      "ATP-pocket_COM_A_mean": 22.184385299682617,
+      "ATP-pocket_COM_A_std": 0.2627142071723938,
+      "lid-loop_Rg_A_mean": 9.037481307983398,
+      "lid-loop_Rg_A_std": 0.16456685960292816,
+      "RMSD_to_1YER_A_mean": 1.3314776492786982,
+      "RMSD_to_1YER_A_std": 0.11343555534898979
+    },
+    {
+      "state": 2,
+      "source": "AlphaFlow",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "MarS-FM",
+      "n_frames": 3,
+      "Rg_A_mean": 16.773866653442383,
+      "Rg_A_std": 0.12199640274047852,
+      "end_to_end_A_mean": 23.3968448638916,
+      "end_to_end_A_std": 8.422198295593262,
+      "ATP-pocket_COM_A_mean": 23.693876266479492,
+      "ATP-pocket_COM_A_std": 2.5139882564544678,
+      "lid-loop_Rg_A_mean": 11.513659477233887,
+      "lid-loop_Rg_A_std": 2.2508695125579834,
+      "RMSD_to_1YER_A_mean": 7.225311610928872,
+      "RMSD_to_1YER_A_std": 2.7671136580842832
+    },
+    {
+      "state": 3,
+      "source": "BioEmu",
+      "n_frames": 188,
+      "Rg_A_mean": 16.631561279296875,
+      "Rg_A_std": 0.26071545481681824,
+      "end_to_end_A_mean": 33.43396759033203,
+      "end_to_end_A_std": 3.1815948486328125,
+      "ATP-pocket_COM_A_mean": 21.72028160095215,
+      "ATP-pocket_COM_A_std": 1.7031543254852295,
+      "lid-loop_Rg_A_mean": 8.932294845581055,
+      "lid-loop_Rg_A_std": 0.8417147397994995,
+      "RMSD_to_1YER_A_mean": 3.0379397645953006,
+      "RMSD_to_1YER_A_std": 0.8538371311854087
+    },
+    {
+      "state": 3,
+      "source": "Boltz-2",
+      "n_frames": 0
+    },
+    {
+      "state": 3,
+      "source": "AlphaFlow",
+      "n_frames": 0
+    }
+  ],
+  "domain_slices": {
+    "CENTRAL_BSHEET": [
+      34,
+      54
+    ],
+    "LID_LOOP": [
+      83,
+      103
+    ],
+    "HELIX2": [
+      99,
+      125
+    ]
+  }
+}
