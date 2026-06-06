@@ -140,7 +140,13 @@ def main():
           for r in range(3)], axis=0,
     )
 
-    sources = {"MD_apo": apo_md, "MD_holo": holo_md}
+    # MD_apo:         apo MD starting from PDB 1YER (no ligand in crystal,
+    #                 no ligand in MD). Faithful apo simulation.
+    # MD_apoFromHolo: apo MD starting from PDB 1YET (geldanamycin-bound
+    #                 crystal) but with the ligand stripped during prep
+    #                 (PDBFixer.removeHeterogens). It is also an APO MD,
+    #                 just seeded from the holo crystal conformation.
+    sources = {"MD_apo": apo_md, "MD_apoFromHolo": holo_md}
     for tag, path in [("MarS-FM", "hsp90_ntd_marsfm200.npz"),
                        ("BioEmu", "hsp90_ntd_bioemu200.npz"),
                        ("Boltz-2", "hsp90_ntd_boltz200.npz"),
@@ -150,7 +156,7 @@ def main():
             sources[tag] = ca
             print(f"  {tag}: {ca.shape[0]} frames")
     print(f"  MD_apo:  {apo_md.shape[0]} frames")
-    print(f"  MD_holo: {holo_md.shape[0]} frames")
+    print(f"  MD_apoFromHolo: {holo_md.shape[0]} frames")
 
     src_names = list(sources.keys())
     all_coords = np.concatenate([sources[s] for s in src_names], axis=0)

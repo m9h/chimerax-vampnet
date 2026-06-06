@@ -1,7 +1,7 @@
 {
   "sources": [
     "MD_apo",
-    "MD_holo",
+    "MD_apoFromHolo",
     "MarS-FM",
     "BioEmu",
     "Boltz-2",
@@ -9,7 +9,7 @@
   ],
   "n_frames_per_source": {
     "MD_apo": 45000,
-    "MD_holo": 45000,
+    "MD_apoFromHolo": 45000,
     "MarS-FM": 200,
     "BioEmu": 188,
     "Boltz-2": 200,
@@ -31,7 +31,7 @@
     },
     {
       "state": 0,
-      "source": "MD_holo",
+      "source": "MD_apoFromHolo",
       "n_frames": 24622,
       "lid-floor_COM_A_mean": 15.866913795471191,
       "lid-floor_COM_A_std": 0.837550938129425,
@@ -77,7 +77,7 @@
     },
     {
       "state": 1,
-      "source": "MD_holo",
+      "source": "MD_apoFromHolo",
       "n_frames": 86,
       "lid-floor_COM_A_mean": 15.362700462341309,
       "lid-floor_COM_A_std": 0.33121341466903687,
@@ -155,7 +155,7 @@
     },
     {
       "state": 2,
-      "source": "MD_holo",
+      "source": "MD_apoFromHolo",
       "n_frames": 0
     },
     {
@@ -185,7 +185,7 @@
     },
     {
       "state": 3,
-      "source": "MD_holo",
+      "source": "MD_apoFromHolo",
       "n_frames": 20292,
       "lid-floor_COM_A_mean": 15.296982765197754,
       "lid-floor_COM_A_std": 0.6391503214836121,

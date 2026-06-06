@@ -5,6 +5,41 @@ Script: `md/hsp90_cryptic_pocket.py`
 Backing data: `md/hsp90_cryptic_pocket_results.json`
 Figure: `md/figures/hsp90_cryptic_pocket.png`
 
+## apo / holo glossary
+
+- **apo** (Greek ἀπό, "away from"): short for *apoprotein* — the
+  protein **without** its bound ligand or cofactor.
+- **holo** (Greek ὅλος, "whole, complete"): short for *holoprotein* —
+  the protein **with** its bound ligand or cofactor.
+
+In structural biology, "apo" and "holo" usually distinguish whether
+the functional ligand is bound. In MD they're slightly looser —
+they often refer to whether the *crystal* the MD was seeded from
+was ligand-bound, not whether the MD itself has the ligand.
+
+For Hsp90 NTD v0.7 specifically:
+
+- **MD_apo** — MD started from PDB 1YER, the apo Hsp90α NTD
+  crystal (no ligand in crystal). No ligand in the MD either.
+  Faithful apo simulation.
+- **MD_apoFromHolo** — MD started from PDB 1YET, the geldanamycin-
+  bound holo crystal, but with the ligand **stripped** during prep
+  (PDBFixer's `removeHeterogens(keepWater=False)` removes all
+  non-protein heterogens including GDM). It is *also* an apo MD,
+  just seeded from the holo crystal conformation. The lid was
+  structured around the ligand in the holo crystal and starts the
+  MD in that conformation; whether it relaxes within 300 ns is the
+  empirical question.
+
+So both Hsp90 MD trajectories here are *apo simulations* (no
+ligand present in either). The distinction is the **starting
+conformation**: apo crystal vs holo crystal. A true ligand-bound
+holo MD would require parameterizing GDM (Amber GAFF / OpenFF) and
+binding it explicitly; that is v0.7.x or later work.
+
+Notch1 in v0.3–v0.7 uses apo/holo correctly — the holo Fab really
+is present in the holo MD (3L95 Fab kept in the prepped system).
+
 ## Approach
 
 CA-based geometric proxies for pocket opening, computed per frame
@@ -25,15 +60,15 @@ across the v0.7 6-source ensemble:
 | state | source | n | lid-floor | **Asn51-Thr109** | lid-Rg | Asn51-Thr115 |
 |---|---|---:|---:|---:|---:|---:|
 | 0 | MD_apo  |  5 534 | 15.6 ± 0.6 | **10.3 ± 1.3** | 7.9 ± 0.3 | 15.5 ± 1.1 |
-| 0 | MD_holo | 24 622 | 15.9 ± 0.8 | **16.6 ± 0.9** | 7.9 ± 0.2 | 14.4 ± 0.9 |
+| 0 | MD_apoFromHolo | 24 622 | 15.9 ± 0.8 | **16.6 ± 0.9** | 7.9 ± 0.2 | 14.4 ± 0.9 |
 | 1 | MD_apo  | 25 012 | 16.3 ± 0.6 | **10.1 ± 0.9** | 7.4 ± 0.2 | 16.6 ± 0.7 |
-| 1 | MD_holo |     86 | 15.4 ± 0.3 | **15.3 ± 0.4** | 7.8 ± 0.1 | 13.8 ± 0.4 |
+| 1 | MD_apoFromHolo |     86 | 15.4 ± 0.3 | **15.3 ± 0.4** | 7.8 ± 0.1 | 13.8 ± 0.4 |
 | 1 | MarS-FM |    200 | 18.4 ± 5.8 | **16.7 ± 7.0** | 7.8 ± 1.1 | 18.9 ± 6.3 |
 | 1 | BioEmu  |    188 | 17.3 ± 1.1 | **16.1 ± 1.2** | 7.5 ± 0.7 | 17.1 ± 3.4 |
 | 1 | Boltz-2 |    200 | 17.1 ± 0.2 | **18.0 ± 0.5** | 7.4 ± 0.1 | 16.4 ± 0.3 |
 | 1 | AlphaFlow |  200 | 17.8 ± 0.9 | **16.8 ± 1.0** | 7.5 ± 0.6 | 17.7 ± 2.1 |
 | 2 | MD_apo  | 14 454 | 15.9 ± 0.6 | **9.3 ± 0.6**  | 7.6 ± 0.2 | 16.6 ± 1.0 |
-| 3 | MD_holo | 20 292 | 15.3 ± 0.6 | **15.4 ± 0.7** | 7.9 ± 0.3 | 14.3 ± 1.4 |
+| 3 | MD_apoFromHolo | 20 292 | 15.3 ± 0.6 | **15.4 ± 0.7** | 7.9 ± 0.3 | 14.3 ± 1.4 |
 
 ## Key finding: **bimodal pocket opening on the Asn51-Thr109 axis**
 
@@ -44,7 +79,7 @@ distinct populations emerge:
   - MD_apo across all 3 of its states (0, 1, 2) — 45 000 frames
   - The pocket gate is essentially clamped shut at ~10 Å
 - **OPEN pocket** (~15-18 Å Asn51-Thr109):
-  - MD_holo across all its states (0, 1-tiny, 3) — 45 000 frames
+  - MD_apoFromHolo across all its states (0, 1-tiny, 3) — 45 000 frames
   - All 4 generative samplers (200 + 188 + 200 + 200 = 788 frames),
     all in state 1
   - Pocket gate ~5-8 Å wider than apo MD
@@ -75,10 +110,10 @@ to the dominant PDB crystal forms. They don't recover the
 conformational selection effects that emerge from explicit
 solvent + force field dynamics.
 
-The MD_holo MD (starting from 1YET conformation with GDM stripped
+The MD_apoFromHolo MD (starting from 1YET conformation with GDM stripped
 by PDBFixer) stays in the open-lid conformation because the lid
 was structured around the ligand in the crystal and hasn't yet
-relaxed in 300 ns. So MD_holo here is best read as "starting from
+relaxed in 300 ns. So MD_apoFromHolo here is best read as "starting from
 holo crystal, lid-open trajectory" rather than a true holo
 ensemble. (A proper holo MD would parameterize GDM via Amber GAFF
 + OpenFF and bind it explicitly; v0.7.x or later work.)

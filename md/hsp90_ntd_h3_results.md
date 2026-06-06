@@ -4,6 +4,26 @@
 **System**: human Hsp90α N-terminal domain (residues 17-223; 207 CAs)
 **Status**: 5 of 5 sources integrated; preliminary single-system pilot.
 
+## apo / holo glossary
+
+- **apo** (Greek ἀπό): the protein *without* its bound ligand
+  ("apoprotein"). In v0.7 Hsp90 work, both MD trajectories are apo
+  simulations (no ligand present in the MD).
+- **holo** (Greek ὅλος): the protein *with* its bound ligand
+  ("holoprotein"). In v0.7 Hsp90, no MD here actually contains a
+  ligand — see naming note below.
+
+Naming note (v0.7.1 correction): the Hsp90 trajectory previously
+labeled "MD_holo" is renamed **MD_apoFromHolo** — it's an apo MD
+seeded from PDB 1YET (the geldanamycin-bound crystal), with the
+ligand stripped during prep (PDBFixer's `removeHeterogens`). The
+old label was misleading because no ligand was ever present in the
+simulation. A true ligand-bound holo MD would need GDM
+parameterized via Amber GAFF / OpenFF; queued for later work.
+
+In Notch1 v0.3+ the apo/holo labels remain accurate — the anti-NRR
+Fab really is present in the holo MD (3L95 chains kept).
+
 Scripts:
 - `md/multisource_h3.py --system hsp90_ntd`
 - `md/hsp90_ntd_h3_biology.py` (4-source biology preview; 5-source
@@ -124,9 +144,10 @@ data manifold.
 - 5-source VAMPnet fit + biology features: $0 (local CPU)
 - Total so far: ~$36
 
-Pending: holo MD (3 × 300 ns, ~$30, in flight), holo 5-source H3,
-cryptic-pocket analysis with fpocket/POVME, AF3 6-source when
-DeepMind weights arrive.
+Pending: true ligand-bound holo MD (geldanamycin parameterized via
+Amber GAFF / OpenFF; v0.7.x), cryptic-pocket analysis with
+heavy-atom SASA via mdtraj.shrake_rupley or fpocket (v0.7.x), and
+AF3 6-source when DeepMind weights arrive.
 
 ## See also
 
