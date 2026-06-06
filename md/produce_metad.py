@@ -26,9 +26,13 @@ from openmmplumed import PlumedForce
 
 def produce_metad(prepared_dir: Path, walker: int, steps: int,
                    plumed_input: str, report_interval: int,
-                   dcd_interval: int):
+                   dcd_interval: int, out_dir_name: str | None = None):
     prepared_dir = Path(prepared_dir)
-    out_dir = prepared_dir / f"metad_walker_{walker}"
+    if out_dir_name:
+        # 2D-metad path: caller provides the exact subdir name.
+        out_dir = prepared_dir / out_dir_name
+    else:
+        out_dir = prepared_dir / f"metad_walker_{walker}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"[metad] loading prepared system from {prepared_dir}")
@@ -132,9 +136,12 @@ def main():
                     help="path to PLUMED input file")
     p.add_argument("--report-interval", type=int, default=5000)
     p.add_argument("--dcd-interval", type=int, default=5000)
+    p.add_argument("--out-dir-name", type=str, default=None,
+                    help="override default 'metad_walker_<i>' subdir name")
     args = p.parse_args()
     produce_metad(args.prepared_dir, args.walker, args.steps,
-                   args.plumed, args.report_interval, args.dcd_interval)
+                   args.plumed, args.report_interval, args.dcd_interval,
+                   out_dir_name=args.out_dir_name)
 
 
 if __name__ == "__main__":

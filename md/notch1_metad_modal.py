@@ -218,6 +218,168 @@ def run(system: str, walker: int = 0, ns: float = 5.0,
     print(f"[local] metad walker done: {r}")
 
 
+# ----------------------------------------------------------------------
+# 2D metadynamics on (NEC-NTM COM, LNR-A → HD-N COM) -- v0.7 W4c
+# ----------------------------------------------------------------------
+
+def _plumed_script_2d(nec_ca: list[int], ntm_ca: list[int],
+                       lnra_ca: list[int], hdn_ca: list[int],
+                       height_kjmol: float,
+                       sigma_d1_nm: float, sigma_d2_nm: float,
+                       pace: int, biasfactor: float, temperature_K: float,
+                       colvar_stride: int, hills_stride: int) -> str:
+    """Compose a 2D PLUMED input biasing both CV1 (NEC-NTM COM) and
+    CV2 (intra-NEC LNR-A COM → HD-N COM). Grid is 2D 0-8 nm × 0-5 nm.
+    """
+    nec_str  = ",".join(str(i + 1) for i in nec_ca)
+    ntm_str  = ",".join(str(i + 1) for i in ntm_ca)
+    lnra_str = ",".join(str(i + 1) for i in lnra_ca)
+    hdn_str  = ",".join(str(i + 1) for i in hdn_ca)
+    return f"""
+nec:  COM ATOMS={nec_str}
+ntm:  COM ATOMS={ntm_str}
+lnra: COM ATOMS={lnra_str}
+hdn:  COM ATOMS={hdn_str}
+
+d1: DISTANCE ATOMS=nec,ntm
+d2: DISTANCE ATOMS=lnra,hdn
+
+metad: METAD ARG=d1,d2 ...
+  PACE={pace}
+  HEIGHT={height_kjmol}
+  SIGMA={sigma_d1_nm},{sigma_d2_nm}
+  BIASFACTOR={biasfactor}
+  TEMP={temperature_K}
+  FILE=HILLS
+  GRID_MIN=0.0,1.0
+  GRID_MAX=8.0,5.0
+  GRID_BIN=200,150
+...
+
+PRINT ARG=d1,d2,metad.bias FILE=COLVAR STRIDE={colvar_stride}
+FLUSH STRIDE={hills_stride}
+""".strip()
+
+
+# Notch1 NEC residue-range conventions (from v0.5 H3 biology) on
+# chain A (174 CAs total): LNR-A = residues 1-35, HD-N = residues
+# 120-174 (intra-NEC domain COMs).
+_LNR_A_LOCAL  = slice(0, 35)
+_HD_N_LOCAL   = slice(119, 174)
+
+
+@app.function(gpu="A100-80GB", timeout=12 * 3600,
+               volumes={VOL_MOUNT: vol})
+def run_remote_2d(system: str, walker: int, ns: float = 20.0,
+                   dt_fs: float = 4.0,
+                   height_kjmol: float = 1.2,
+                   sigma_d1_nm: float = 0.05,
+                   sigma_d2_nm: float = 0.08,
+                   pace_ps: float = 1.0,
+                   biasfactor: float = 10.0,
+                   temperature_K: float = 310.0,
+                   colvar_stride_ps: float = 1.0,
+                   chain_nec: str = "A", chain_ntm: str = "B"):
+    """2D well-tempered metad: bias both NEC-NTM COM and the
+    intra-NEC LNR-A → HD-N COM distance. Output dir
+    prepared/<system>/metad_2d_walker_<walker>/.
+
+    Defaults: SIGMA_d1=0.05 nm (matches 1D), SIGMA_d2=0.08 nm (wider
+    because LNR-A → HD-N varies on ~0.5 nm scale per v0.5 H3
+    biology). HEIGHT=1.2 kJ/mol identical to 1D.
+    """
+    import subprocess, sys
+    out_dir = Path(VOL_MOUNT) / "prepared" / system
+    walker_dir = out_dir / f"metad_2d_walker_{walker}"
+    walker_dir.mkdir(parents=True, exist_ok=True)
+
+    import mdtraj as md
+    eq = md.load_pdb(str(out_dir / "equilibrated.pdb"))
+    nec_ca_all = [a.index for a in eq.topology.atoms
+                    if a.name == "CA" and a.residue.chain.chain_id == chain_nec]
+    ntm_ca = [a.index for a in eq.topology.atoms
+                if a.name == "CA" and a.residue.chain.chain_id == chain_ntm]
+    if not nec_ca_all or not ntm_ca:
+        raise RuntimeError(f"missing CAs on chains {chain_nec}/{chain_ntm}")
+    if len(nec_ca_all) < _HD_N_LOCAL.stop:
+        raise RuntimeError(
+            f"chain {chain_nec} has {len(nec_ca_all)} CAs but HD-N requires "
+            f"index {_HD_N_LOCAL.stop}; double-check the system topology"
+        )
+    lnra_ca = nec_ca_all[_LNR_A_LOCAL]
+    hdn_ca  = nec_ca_all[_HD_N_LOCAL]
+
+    steps_per_ps = 1000.0 / dt_fs
+    pace_steps = int(pace_ps * steps_per_ps)
+    colvar_stride_steps = int(colvar_stride_ps * steps_per_ps)
+    plumed_text = _plumed_script_2d(
+        nec_ca_all, ntm_ca, lnra_ca, hdn_ca,
+        height_kjmol=height_kjmol,
+        sigma_d1_nm=sigma_d1_nm, sigma_d2_nm=sigma_d2_nm,
+        pace=pace_steps, biasfactor=biasfactor,
+        temperature_K=temperature_K,
+        colvar_stride=colvar_stride_steps, hills_stride=pace_steps,
+    )
+    plumed_path = walker_dir / "plumed.dat"
+    plumed_path.write_text(plumed_text)
+    print(f"[metad-2d] wrote {plumed_path} (NEC={len(nec_ca_all)} CAs, "
+          f"NTM={len(ntm_ca)} CAs, LNR-A={len(lnra_ca)} CAs, "
+          f"HD-N={len(hdn_ca)} CAs)")
+
+    steps = int(ns * 1000 * steps_per_ps)
+    cmd = [PYTHON, "/workspace/produce_metad.py", str(out_dir),
+           "--walker", str(walker),
+           "--steps", str(steps),
+           "--plumed", str(plumed_path),
+           "--report-interval", str(max(1000, colvar_stride_steps * 10)),
+           "--dcd-interval", str(colvar_stride_steps * 5),
+           "--out-dir-name", f"metad_2d_walker_{walker}"]
+    print(f"[modal.metad-2d] {' '.join(cmd)}")
+    sys.stdout.flush()
+    subprocess.run(cmd, check=True)
+    vol.commit()
+    return {"system": system, "walker": walker, "ns": ns,
+            "cv": "2d_NEC-NTM_LNRA-HDN",
+            "out_dir": str(walker_dir)}
+
+
+@app.local_entrypoint()
+def run_2d(system: str, walker: int = 0, ns: float = 5.0,
+            dt_fs: float = 4.0, sigma_d1_nm: float = 0.05,
+            sigma_d2_nm: float = 0.08,
+            height_kjmol: float = 1.2, biasfactor: float = 10.0,
+            pace_ps: float = 1.0, temperature: float = 310.0):
+    """Single 2D metad walker. Use ns=5 for smoke, 20-30 for production."""
+    r = run_remote_2d.remote(system, walker, ns=ns, dt_fs=dt_fs,
+                               sigma_d1_nm=sigma_d1_nm,
+                               sigma_d2_nm=sigma_d2_nm,
+                               height_kjmol=height_kjmol,
+                               biasfactor=biasfactor, pace_ps=pace_ps,
+                               temperature_K=temperature)
+    print(f"[local] 2D metad walker done: {r}")
+
+
+@app.local_entrypoint()
+def fanout_2d(system: str, walkers: int = 3, ns: float = 20.0,
+               dt_fs: float = 4.0, sigma_d1_nm: float = 0.05,
+               sigma_d2_nm: float = 0.08, height_kjmol: float = 1.2,
+               biasfactor: float = 10.0, pace_ps: float = 1.0,
+               temperature: float = 310.0, start_walker: int = 0):
+    """Launch N 2D metad walkers in parallel via spawn(). Output dirs
+    prepared/<system>/metad_2d_walker_<i>/."""
+    handles = []
+    for w in range(start_walker, start_walker + walkers):
+        h = run_remote_2d.spawn(system, w, ns=ns, dt_fs=dt_fs,
+                                  sigma_d1_nm=sigma_d1_nm,
+                                  sigma_d2_nm=sigma_d2_nm,
+                                  height_kjmol=height_kjmol,
+                                  biasfactor=biasfactor, pace_ps=pace_ps,
+                                  temperature_K=temperature)
+        print(f"[local] spawned 2D walker {w}  fc_id={h.object_id}")
+        handles.append((w, h))
+    print(f"[local] {len(handles)} 2D walkers in flight")
+
+
 @app.local_entrypoint()
 def fanout(system: str, walkers: int = 5, ns: float = 100.0,
             dt_fs: float = 4.0, sigma_nm: float = 0.05,
