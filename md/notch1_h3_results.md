@@ -29,6 +29,7 @@ Ingredients (Notch1 NEC, 174 CAs):
 | **BioEmu** v1.1 | 169 | Modal A100-80GB, microsoft/bioemu, filtered for physicality |
 | **Boltz-2** | 200 | Modal A100-80GB, 6m14s, ~$0.30, `debian_slim` image |
 | **AlphaFlow / ESMFlow-MD** | 200 | Modal A100-80GB, 12m49s, ~$0.30, CUDA-11.8 + micromamba |
+| **ESMFold2** *(pending, v0.7.x)* | — | biohub/ESMFold2 (MIT); single-chain NEC (174 CAs) via `md/esmfold2_modal.py`; adapter wired into `multisource_h3.py` but ensemble not yet generated |
 
 Joint VAMPnet: k=4 states, lag 20, 500 CA-CA distance features
 standardised + clipped ±5σ, MLP 128-128-4 with ELU, fit on the union
@@ -110,10 +111,36 @@ written up in `md/notch1_h3_biology_results.md`. Key annotations:
   MD's 18.9 across both states it occupies), predictable from its
   PDB-structure training distribution.
 
+## ESMFold2 (6th source) — pending
+
+ESMFold2 (Rives et al. 2026, "A World Model of Protein Biology",
+biohub.org) is the newest AF3-class diffusion structure/complex
+predictor (on top of the ESMC protein LM). Adapter at
+`md/esmfold2_modal.py`; wired into `multisource_h3.py` as the
+`ESMFold2` source (single-chain NEC, 174 CAs, to share this feature
+space). Awaiting first generation run.
+
+**Pre-registered prediction** (before the data exists, to avoid
+post-hoc rationalisation): ESMFold2, being AF3-class, should behave
+like AlphaFlow + Boltz-2 — i.e. **saturate state 1** (the structure-
+prediction-only basin: tighter LNR-A → HD-N packing, ~22–24 Å) with
+near-zero frames in the MD-equilibrium states 0/3 and the
+flow-matching state 2. If it instead reaches state 2 or a *new*
+unique state, that falsifies the "AF3-class diffusion concentrates
+on the structure-prediction manifold" taxonomy. Either outcome is
+informative; the null (state-1 saturation) is the strongest possible
+restatement that single-structure prediction — however SOTA — is not
+a dynamics substitute.
+
+Note the multi-chain ESMFold2 capability (NEC+NTM, or holo NRR+Fab)
+is a **separate** deposit with a different CA count — it feeds a
+future complex-level H2/H3 variant, not this 174-CA NEC comparison.
+
 ## What's pending
 
 - **AlphaFold3 weights-gated integration**: queued behind DeepMind's
   approval process; not on the v0.5 critical path.
+- **ESMFold2 6th source**: adapter + wiring done; generation run + refit pending.
 - **Per-source COM separation** within each state.
 - **Bootstrap CI on the per-state breakdowns**.
 

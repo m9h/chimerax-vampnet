@@ -50,7 +50,7 @@ def cmd_load_ensemble(session, source, path, format="auto"):
 
     source: human-readable label ("md_apo", "alphaflow", "bioemu", "marsfm", etc.)
     path:   filesystem path to a trajectory or ensemble file
-    format: one of "auto", "alphaflow", "bioemu", "marsfm", "md"
+    format: one of "auto", "alphaflow", "bioemu", "boltz", "marsfm", "esmfold2", "md"
 
     Returns: {"source": str, "n_frames": int, "format_detected": str}
     """
@@ -189,9 +189,9 @@ def cmd_mcp_stop(session):
 _DESC_LOAD_ENSEMBLE = CmdDesc(
     required=[("source", StringArg), ("path", OpenFileNameArg)],
     keyword=[("format", EnumOf(["auto", "alphaflow", "bioemu", "boltz",
-                                  "marsfm", "md"]))],
+                                  "marsfm", "esmfold2", "md"]))],
     synopsis=("Load a conformational ensemble (MD trajectory, AlphaFlow / "
-              "ESMFlow-MD, BioEmu, Boltz-2, or MarS-FM .npz). source is a "
+              "ESMFlow-MD, BioEmu, Boltz-2, MarS-FM, or ESMFold2 .npz). source is a "
               "free-text label (e.g. 'md_apo', 'alphaflow'). format=auto "
               "infers from the filename. Example: vampnet load_ensemble "
               "md_apo apo.dcd; vampnet load_ensemble alphaflow af.npz"),

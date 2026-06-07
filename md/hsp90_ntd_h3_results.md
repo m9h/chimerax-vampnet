@@ -38,6 +38,7 @@ Scripts:
 | **BioEmu** v1.1 | 188 | Modal A100-80GB, microsoft/bioemu, filtered for physicality, ~$0.50 |
 | **Boltz-2** | 200 | Modal A100-80GB, boltz-community/boltz2, ~$0.30 |
 | **AlphaFlow** / ESMFlow-MD | 200 | Modal A100-80GB, bjing-mit/alphaflow:esmflow\_md\_base\_202402, ~$0.30 |
+| **ESMFold2** *(pending, v0.7.x)* | — | biohub/ESMFold2 (MIT); single-chain NTD (207 CAs) via `md/esmfold2_modal.py`; adapter wired into `multisource_h3.py`, ensemble not yet generated |
 
 ## Per-state per-source breakdown
 
@@ -148,6 +149,28 @@ Pending: true ligand-bound holo MD (geldanamycin parameterized via
 Amber GAFF / OpenFF; v0.7.x), cryptic-pocket analysis with
 heavy-atom SASA via mdtraj.shrake_rupley or fpocket (v0.7.x), and
 AF3 6-source when DeepMind weights arrive.
+
+## ESMFold2 (6th source) — pending
+
+ESMFold2 (Rives et al. 2026, "A World Model of Protein Biology",
+biohub.org), the newest AF3-class diffusion structure predictor on
+the ESMC protein LM. Adapter `md/esmfold2_modal.py`; wired into
+`multisource_h3.py --system hsp90_ntd` as the `ESMFold2` source
+(single-chain NTD, 207 CAs). Awaiting first generation run.
+
+**Pre-registered prediction**: on this *flexible monomeric* system,
+the v0.7 H3 result is that all AF3-class samplers (AlphaFlow 100 %,
+Boltz-2 99.5 %, BioEmu 100 %) collapse onto the single consensus
+state 1 (RMSD 1–3 Å vs 1YER apo crystal) while MD is the broad
+explorer (states 0/2/3). ESMFold2 should **also collapse onto state
+1**, reproducing the crystal-like modal conformation with low
+diversity — the SUBTRACT-not-ADD behaviour this system exhibits. A
+strong test: if even the SOTA single-structure predictor cannot
+recover MD's lateral excursions on a flexible monomer, that is the
+cleanest statement of the v0.7 inversion thesis. Watch the Boltz-2
+near-zero-variance signature (Rg 16.4 ± 0.0) — if ESMFold2 shows the
+same collapsed variance, it confirms the bias is structural to
+AF3-class diffusion, not specific to one implementation.
 
 ## See also
 

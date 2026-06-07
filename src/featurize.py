@@ -1,12 +1,13 @@
 """Ensemble loading + featurization for chimerax-vampnet.
 
-Loads conformational ensembles from five sources on equal footing:
+Loads conformational ensembles from six sources on equal footing:
 
   - MD trajectories (anything ChimeraX can open: .dcd, .xtc, .trr, .nc, ...)
   - AlphaFlow / ESMFlow-MD ensembles (numpy .npz with 'coords' (N, A, 3))
   - BioEmu ensembles (numpy .npz or a directory of .pdb files)
   - MarS-FM ensembles (numpy .npz)
   - Boltz-2 ensembles (numpy .npz; shape-compatible with BioEmu)
+  - ESMFold2 ensembles (numpy .npz; seed-varied diffusion samples)
 
 After loading, each frame becomes a row in an ensemble-frame index plus a
 parallel "source" tag. The featurize() function pulls CA-CA distances,
@@ -45,6 +46,8 @@ def _detect_format(path: str) -> str:
         return "bioemu"
     if "marsfm" in p or "mars_fm" in p or "mars-fm" in p:
         return "marsfm"
+    if "esmfold2" in p or "esmfold_2" in p or "esmfold-2" in p:
+        return "esmfold2"
     if p.endswith(".npz"):
         return "alphaflow"  # default assumption for npz
     return "md"
@@ -114,6 +117,31 @@ def load_ensemble(session, source: str, path: str, format: str = "auto") -> Tupl
         else:
             data = np.load(path)
             for key in ("samples", "coords", "x", "conformations"):
+                if key in data.files:
+                    coords = data[key]
+                    break
+            else:
+                coords = data[data.files[0]]
+        structure = None
+    elif fmt == "esmfold2":
+        # ESMFold2 (Rives et al. 2026, "A World Model of Protein Biology")
+        # is an AF3-class diffusion structure/complex predictor on top of
+        # the ESMC protein language model. It is a SINGLE-STRUCTURE
+        # predictor (its authors explicitly note it is not a dynamics
+        # model); we treat its seed-varied diffusion draws as one more
+        # generative source on equal footing with Boltz-2 / AlphaFlow,
+        # primarily to (a) H3-stress-test whether even SOTA single-
+        # structure prediction collapses to the modal state, and (b)
+        # provide a native multi-chain generative source for Notch1 NRR
+        # where the MarS-FM multi-chain path is blocked. The adapter
+        # md/esmfold2_modal.py emits an .npz with the same 'coords' /
+        # 'coords_ca' layout as the boltz/marsfm adapters, plus
+        # 'chain_id', 'plddt', and 'iptm' metadata for QC/filtering.
+        if os.path.isdir(path):
+            coords = _load_pdb_dir(path)
+        else:
+            data = np.load(path)
+            for key in ("coords", "coords_ca", "samples"):
                 if key in data.files:
                     coords = data[key]
                     break

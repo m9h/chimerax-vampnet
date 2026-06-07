@@ -94,6 +94,16 @@ SYSTEMS = {
             "BioEmu":    "notch1_NEC_bioemu200.npz",
             "Boltz-2":   "notch1_NEC_boltz200.npz",
             "AlphaFlow": "notch1_NEC_af200.npz",
+            # ESMFold2 (v0.7.x): must be the SAME single-chain NEC
+            # selection as the other sources (174 CAs) to share this
+            # VAMPnet feature space — generate with
+            #   modal run md/esmfold2_modal.py::sample \
+            #     --sequence <NEC seq> --name notch1_NEC \
+            #     --n-samples 200 --out notch1_NEC_esmfold2200.npz
+            # The multi-chain NEC+NTM ESMFold2 run is a SEPARATE deposit
+            # (different CA count) for the complex H2/H3 variant, not this
+            # 174-CA NEC comparison.
+            "ESMFold2":  "notch1_NEC_esmfold2200.npz",
             # AF3 added in v0.7 W4a when weights arrive.
         },
     },
@@ -108,6 +118,11 @@ SYSTEMS = {
             "BioEmu":    "hsp90_ntd_bioemu200.npz",
             "Boltz-2":   "hsp90_ntd_boltz200.npz",
             "AlphaFlow": "hsp90_ntd_af200.npz",
+            # ESMFold2 (v0.7.x): single-chain NTD, 207 CAs to match. Run
+            #   modal run md/esmfold2_modal.py::sample \
+            #     --sequence <Hsp90 NTD 17-223 seq> --name hsp90_ntd \
+            #     --n-samples 200 --out hsp90_ntd_esmfold2200.npz
+            "ESMFold2":  "hsp90_ntd_esmfold2200.npz",
         },
     },
 }
