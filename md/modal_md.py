@@ -74,13 +74,18 @@ def prep_remote(system: str, pdb_bytes: bytes, padding_nm: float = 1.0,
                  temperature_K: float = 310.0, ionic_strength: float = 0.15,
                  dt_fs: float = 4.0, hmr_amu: float = 4.0,
                  com_restrain: str | None = None,
-                 com_restrain_k: float = 100.0):
-    """Run prep.py on Modal. Writes prepared/<system>/ on the volume.
+                 com_restrain_k: float = 100.0,
+                 membrane: bool = False, lipid_type: str = "POPC"):
+    """Run prep.py (or prep_membrane.py if --membrane) on Modal.
+    Writes prepared/<system>/ on the volume.
 
     pdb_bytes: raw bytes of the input PDB. Pushed by the launcher so we
     don't depend on the user having pre-populated the volume.
     com_restrain: "CHAIN_A:CHAIN_B" string forwarded to prep.py's
-    --com-restrain (e.g. "A:B" for Notch1 NRR NEC<->NTM).
+    --com-restrain (e.g. "A:B" for Notch1 NRR NEC<->NTM). Ignored
+    when membrane=True.
+    membrane: if True, dispatch to prep_membrane.py which embeds the
+    protein in a POPC bilayer (v0.8 W1 for β2AR).
     """
     import subprocess
     import sys
@@ -93,15 +98,24 @@ def prep_remote(system: str, pdb_bytes: bytes, padding_nm: float = 1.0,
     pdb_path = in_dir / f"{system}.pdb"
     pdb_path.write_bytes(pdb_bytes)
 
-    cmd = [PYTHON, "/workspace/prep.py", str(pdb_path), str(out_dir),
-           "--padding-nm", str(padding_nm),
-           "--ionic-strength", str(ionic_strength),
-           "--temperature", str(temperature_K),
-           "--dt-fs", str(dt_fs),
-           "--hmr-amu", str(hmr_amu)]
-    if com_restrain:
-        cmd += ["--com-restrain", com_restrain,
-                "--com-restrain-k", str(com_restrain_k)]
+    if membrane:
+        cmd = [PYTHON, "/workspace/prep_membrane.py",
+                str(pdb_path), str(out_dir),
+                "--ionic-strength", str(ionic_strength),
+                "--temperature", str(temperature_K),
+                "--dt-fs", str(dt_fs),
+                "--hmr-amu", str(hmr_amu),
+                "--lipid-type", lipid_type]
+    else:
+        cmd = [PYTHON, "/workspace/prep.py", str(pdb_path), str(out_dir),
+                "--padding-nm", str(padding_nm),
+                "--ionic-strength", str(ionic_strength),
+                "--temperature", str(temperature_K),
+                "--dt-fs", str(dt_fs),
+                "--hmr-amu", str(hmr_amu)]
+        if com_restrain:
+            cmd += ["--com-restrain", com_restrain,
+                    "--com-restrain-k", str(com_restrain_k)]
     print(f"[modal.prep] {' '.join(cmd)}")
     sys.stdout.flush()
     r = subprocess.run(cmd, check=True)
@@ -152,19 +166,25 @@ def produce_remote(system: str, replica: int, ns: float = 100.0,
 def prep(system: str, pdb: str, padding_nm: float = 1.0,
          temperature: float = 310.0, ionic_strength: float = 0.15,
          dt_fs: float = 4.0, hmr_amu: float = 4.0,
-         com_restrain: str = "", com_restrain_k: float = 100.0):
+         com_restrain: str = "", com_restrain_k: float = 100.0,
+         membrane: bool = False, lipid_type: str = "POPC"):
     """Upload a local PDB to Modal and run prep on it.
 
     com_restrain: "CHAIN_A:CHAIN_B" passed to prep.py's --com-restrain.
     Example: com_restrain="A:B" for Notch1 NRR NEC<->NTM COM-distance
     restraint (chain IDs of the equilibrated PDB, after PDBFixer
     renumbers them).
+    membrane: dispatch to prep_membrane.py (POPC bilayer) instead of
+    the soluble prep.py. Used for v0.8+ membrane proteins (β2AR).
     """
     pdb_bytes = Path(pdb).read_bytes()
     print(f"[local] uploading {len(pdb_bytes)} bytes for system={system}"
-          + (f"  com_restrain={com_restrain}@k={com_restrain_k}" if com_restrain else ""))
+          + (f"  com_restrain={com_restrain}@k={com_restrain_k}" if com_restrain else "")
+          + (f"  membrane ({lipid_type})" if membrane else ""))
     result = prep_remote.remote(system, pdb_bytes,
                                  padding_nm=padding_nm,
+                                 membrane=membrane,
+                                 lipid_type=lipid_type,
                                  temperature_K=temperature,
                                  ionic_strength=ionic_strength,
                                  dt_fs=dt_fs, hmr_amu=hmr_amu,
