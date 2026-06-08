@@ -32,6 +32,11 @@ jobs:
           # test_chimerax_integration's helpers (skipped in CI anyway).
           pip install --extra-index-url https://download.pytorch.org/whl/cpu \
               "torch" "deeptime>=0.4" "mdtraj" "numpy<2" "scipy" "pytest" "pytest-cov"
+          # modal is needed only to *import* the md/*_modal.py adapters for
+          # the import-smoke test (test_adapters_smoke.py). It's pure-python
+          # to import (no GPU/credentials); the adapters' heavy deps stay
+          # lazy inside the remote functions and never run in CI.
+          pip install "modal"
 
       - name: Run pytest (excludes ChimeraX integration test)
         run: |
