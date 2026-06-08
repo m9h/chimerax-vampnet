@@ -67,19 +67,29 @@ APP_NAME = "chimerax-vampnet-uma"
 HF_REPO = "facebook/UMA"
 
 image = (
+    # fairchem-core main pins torch~=2.8.0 + numpy>=2.0,<2.5 + ase>=3.26.0;
+    # we follow upstream pins exactly to avoid resolver fights.
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "build-essential", "wget")
     .pip_install(
-        "torch==2.4.1",
-        index_url="https://download.pytorch.org/whl/cu124",
+        "torch==2.8.0",
+        index_url="https://download.pytorch.org/whl/cu126",
     )
     .pip_install(
-        "fairchem-core",
-        "ase>=3.23",
+        "torch_scatter",
+        "torch_sparse",
+        "torch_cluster",
+        extra_index_url="https://data.pyg.org/whl/torch-2.8.0+cu126.html",
+    )
+    .pip_install(
+        # Install from git main: PyPI 2.20.0's module layout doesn't expose
+        # pretrained_mlip / FAIRChemCalculator at fairchem.core.calculate.
+        # When the next PyPI release lands, pin a version instead.
+        "fairchem-core @ git+https://github.com/facebookresearch/fairchem.git#subdirectory=packages/fairchem-core",
+        "ase>=3.26.0",
         "biopython",
         "mdtraj",
         "huggingface_hub",
-        "numpy<2",
         "gemmi",
     )
 )
@@ -89,8 +99,14 @@ app = modal.App(APP_NAME, image=image)
 vol = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 VOL_MOUNT = "/vol"
 
+# facebook/UMA is a gated HF repo (one-click access request, then a personal
+# token). Reuses the project-wide "huggingface-secret" Modal secret created
+# 2026-05-22; the same secret unlocks any HF-gated adapter (AF3 etc.).
+HF_SECRET = modal.Secret.from_name("huggingface-secret")
 
-@app.function(gpu="A100-80GB", timeout=24 * 3600, volumes={VOL_MOUNT: vol})
+
+@app.function(gpu="A100-80GB", timeout=24 * 3600, volumes={VOL_MOUNT: vol},
+              secrets=[HF_SECRET])
 def produce_remote(pdb_bytes: bytes, name: str, ns: float = 10.0,
                     temperature_K: float = 310.0, dt_fs: float = 0.5,
                     save_every_fs: float = 200.0,
@@ -115,7 +131,11 @@ def produce_remote(pdb_bytes: bytes, name: str, ns: float = 10.0,
     from ase.io import read as ase_read
     from ase.md.langevin import Langevin
     from ase import units as ase_units
-    from fairchem.core import pretrained_mlip, FAIRChemCalculator
+    # Deep import path — the top-level fairchem.core __init__ re-export
+    # is post-2.20.0, but the .calculate submodule has these in older
+    # versions too. Belt and suspenders.
+    from fairchem.core.calculate import pretrained_mlip
+    from fairchem.core.calculate.ase_calculator import FAIRChemCalculator
 
     pdb_path = Path("/tmp/system.pdb")
     pdb_path.write_bytes(pdb_bytes)
@@ -218,6 +238,62 @@ def _seqres_from_pdb(text: str):
             res = line[17:20].strip()
             out.append(three_to_one.get(res, "X"))
     return "".join(out)
+
+
+@app.function(gpu="A100-80GB", timeout=600, volumes={VOL_MOUNT: vol},
+              secrets=[HF_SECRET])
+def smoke_remote() -> dict:
+    """End-to-end pipeline smoke using ase.build.molecule('H2O') — no PDB
+    parsing involved. Exactly the README example, adapted to return a
+    summary instead of leaving atoms in-memory. Use this to confirm an
+    image rebuild hasn't broken the UMA → ASE → Langevin path."""
+    import os
+    import time
+
+    import numpy as np
+    from ase import units as ase_units
+    from ase.build import molecule
+    from ase.md.langevin import Langevin
+    from fairchem.core.calculate import pretrained_mlip
+    from fairchem.core.calculate.ase_calculator import FAIRChemCalculator
+
+    cache_dir = Path(VOL_MOUNT) / "uma_weights"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("HF_HOME", str(cache_dir))
+
+    seed = int(np.random.randint(0, np.iinfo(np.int32).max, dtype=np.int64))
+    predictor = pretrained_mlip.get_predict_unit("uma-s-1p2", device="cuda",
+                                                  seed=seed)
+    calc = FAIRChemCalculator(predictor, task_name="omol")
+    atoms = molecule("H2O")
+    atoms.calc = calc
+
+    e0 = float(atoms.get_potential_energy())
+    dyn = Langevin(atoms, timestep=0.1 * ase_units.fs,
+                    temperature_K=400, friction=0.001 / ase_units.fs)
+    t0 = time.time()
+    dyn.run(steps=1000)
+    elapsed = time.time() - t0
+    e1 = float(atoms.get_potential_energy())
+    vol.commit()
+    summary = {
+        "ok": True,
+        "n_atoms": int(len(atoms)),
+        "e0_eV": e0, "e1_eV": e1,
+        "elapsed_s": float(elapsed),
+        "steps": 1000,
+        "ns_per_day_equiv": 1000 * 0.1 / 1000 * 86400 / max(1e-9, elapsed) / 1000,
+    }
+    print(f"[uma-smoke] {summary}")
+    return summary
+
+
+@app.local_entrypoint()
+def smoke():
+    """Run the README-style H2O smoke; prints a JSON summary."""
+    print("[local] launching UMA H2O smoke (no PDB parsing)")
+    summary = smoke_remote.remote()
+    print(f"[local] smoke result: {summary}")
 
 
 @app.local_entrypoint()

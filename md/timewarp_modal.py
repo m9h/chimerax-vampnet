@@ -3,48 +3,53 @@
 Paper: Klein, Foong, Fjelde, Mlodozeniec, Brockschmidt, Nowozin, Noé, Tomioka
 2023, "Timewarp: Transferable Acceleration of Molecular Dynamics by Learning
 Time-Coarsened Dynamics" (NeurIPS 2023; arXiv:2302.01170). Code at
-https://github.com/microsoft/timewarp (MIT). Presented at Starkly Speaking
-2023-10-25.
+https://github.com/microsoft/timewarp (MIT). HF data + checkpoints at
+https://huggingface.co/datasets/microsoft/timewarp. Presented at
+Starkly Speaking 2023-10-25.
 
 Why it earns a slot in the v0.9+ multisource pipeline:
 
-  Timewarp learns a normalising flow that proposes moves of 10⁵–10⁶ fs (1-10
-  ns of MD wall time) per step, used as a proposal in an MCMC chain that
-  targets the exact Boltzmann distribution. Unlike BioEmu/Prose/AlphaFlow,
-  Timewarp is *trajectory-aware* — it learns time-dependence, not just an
-  equilibrium emulator. This makes it the only one of our generative
-  candidates that can in principle estimate dynamical quantities (transition
-  rates, residence times) and not just equilibrium populations.
+  Timewarp learns a normalising flow that proposes moves of 10^5-10^6 fs
+  per step, used as an MCMC proposal targeting the exact Boltzmann
+  distribution. Unlike BioEmu/Prose/AlphaFlow, Timewarp is *trajectory-
+  aware* — learns time-dependence, not just an equilibrium emulator. Only
+  one of our generative candidates that can in principle estimate
+  dynamical quantities (transition rates, residence times).
 
-  Applicability: the released Timewarp checkpoint was trained on 2-4-residue
-  peptides (per the paper) and demonstrates transferability *within* that
-  range. The v0.9 use case is therefore the same as Prose's — dipeptide /
-  tetrapeptide benchmarking — not direct application to Notch1/Hsp90/β2AR.
+  Applicability: released checkpoint trained on 2-4-residue peptides per
+  the paper, demonstrates transferability *within* that range. v0.9 use
+  case is dipeptide/tetrapeptide benchmarking, not direct application to
+  Notch1/Hsp90/β2AR. UniSim (transferable-samplers/UniSim) is the same
+  group's larger-system successor.
 
-  Newer alternative: the same group released "UniSim: A Unified Simulator for
-  Time-Coarsened Dynamics of Biomolecules" (github.com/transferable-samplers/
-  UniSim) as a Timewarp successor with broader coverage. If the v0.9 dipeptide
-  benchmark passes, the next step is to swap to UniSim for larger systems —
-  trivial in this adapter (change REPO_URL + import path).
+Image strategy (rev 2 after the rev-1 pip-install scaffold failure):
 
-  Base image:   modal.Image.debian_slim(python_version=3.11)
-  Pip extras:   torch (cu124), microsoft/timewarp from git, biopython,
-                mdtraj, numpy<2.
-  Checkpoint:   Pretrained 2-4-residue model — released alongside the paper.
-                The Modal volume `chimerax-vampnet-md` will cache it on
-                first use to avoid repeated HF/Azure pulls.
+  Timewarp's `timewarp-environment.yml` pins a 2021-era stack:
+    python==3.8.10, pytorch==1.9.0+cu111, openmm==7.7, ase==3.22.1,
+    mdtraj==1.9.7, pdbfixer==1.8.1, biopython==1.79, bgflow (git), deeptime.
+  NGC PyTorch 26.05 ships torch 2.8 — wrong torch entirely. So we use a
+  CUDA 11.1 base + micromamba (matches the project pattern from
+  md/modal_md.py) + minimal conda env (drop the Azure ML, pymol, psi4,
+  ambertools, nglview, dev tools from upstream — pure inference doesn't
+  need them).
+
+  Base image:   nvidia/cuda:11.1.1-cudnn8-runtime-ubuntu20.04 + micromamba
+  Pip extras:   torch==1.9.0+cu111, biopython, mdtraj, openmm, pdbfixer,
+                ase, bgflow (git), deeptime, einops, omegaconf, tqdm.
+  Repo:         microsoft/timewarp @ pinned SHA (2024-08-21 main).
+  Checkpoint:   microsoft/timewarp dataset on HF — cached in the Modal
+                volume to avoid repeat downloads.
   GPU pin:      A100-40GB (sub-100M params).
-  Tested:       UNTESTED as of 2026-06-07 — scaffold only. First-run unknowns:
-                  1. Repo's pip-installable name (`timewarp`? `microsoft-timewarp`?).
-                  2. The exact MCMC entry point — the repo exposes
-                     `timewarp.sample(system, n_steps)` or analogous.
-                  3. Whether the released checkpoint expects a topology file
-                     or just a sequence.
+  Reproducibility note: every git install is pinned to a SHA per the
+  project's adapter-perf-reproducibility memory.
 
-  modal run md/timewarp_modal.py::sample \\
-      --pdb md/ala_dipeptide.pdb --name ala_dipeptide \\
-      --n-mcmc-steps 5000 --burnin 500 \\
-      --out ala_dipeptide_timewarp.npz
+Status:
+  Rev 1 (2026-06-08): pip-install-as-package scaffold — image-build failed
+                       (upstream isn't pip-installable).
+  Rev 2 (2026-06-08): this — micromamba + minimal conda env + git clone.
+                       UNTESTED; first smoke verifies image build only.
+
+  modal run md/timewarp_modal.py::smoke
 """
 
 from __future__ import annotations
@@ -54,134 +59,152 @@ from pathlib import Path
 import modal
 
 APP_NAME = "chimerax-vampnet-timewarp"
-REPO_URL = "git+https://github.com/microsoft/timewarp.git"
+TIMEWARP_SHA = "211fed1d4e345c04929e95dfcca21a5facbb2357"  # main as of 2024-08-21
+HF_DATASET = "microsoft/timewarp"
 
 image = (
-    modal.Image.debian_slim(python_version="3.11")
-    .apt_install("git", "build-essential", "wget")
-    .pip_install(
-        "torch==2.4.1",
-        index_url="https://download.pytorch.org/whl/cu124",
+    # add_python="3.11" is for Modal's own bootstrap layer; the actual
+    # Timewarp workload runs under the micromamba env's Python 3.8.10
+    # (which conda creates from the conda-forge channel — independent of
+    # what Modal ships). Modal v2026 dropped standalone-3.8 support.
+    modal.Image.from_registry(
+        "nvidia/cuda:11.1.1-cudnn8-runtime-ubuntu20.04", add_python="3.11"
     )
-    .pip_install(
-        f"timewarp @ {REPO_URL}",  # TODO: verify package name
-        "biopython",
-        "mdtraj",
+    .apt_install("bzip2", "ca-certificates", "curl", "git", "build-essential",
+                 "libxrender1", "libxext6")  # mdtraj/openmm runtime libs
+    .run_commands(
+        "mkdir -p /opt/conda/bin",
+        "curl -sLo /tmp/mm.tar.bz2 https://micro.mamba.pm/api/micromamba/linux-64/latest",
+        "tar -xvjf /tmp/mm.tar.bz2 -C /opt/conda bin/micromamba",
+        "rm /tmp/mm.tar.bz2",
+    )
+    .env({
+        "PATH": "/opt/conda/bin:/opt/conda/envs/tw/bin:/usr/bin:/bin",
+        "MAMBA_ROOT_PREFIX": "/opt/conda",
+        # Match upstream's CUDA-11.1 binding.
+        "CONDA_OVERRIDE_CUDA": "11.1",
+        # The timewarp repo has __init__.py at its root but no setup.py,
+        # so we clone it as /opt/timewarp and put /opt on PYTHONPATH —
+        # `import timewarp` then resolves to the cloned repo.
+        "PYTHONPATH": "/opt",
+    })
+    .run_commands(
+        # Minimal conda env: only what evaluate.py actually needs.
+        # Drop azureml/pymol/psi4/ambertools/nglview/dev-tools from upstream
+        # environment.yml — those are training-time + Azure infra cruft.
+        "/opt/conda/bin/micromamba create -y -n tw -c pytorch -c conda-forge "
+        "python=3.8.10 "
+        "'pytorch=1.9.0=py3.8_cuda11.1_cudnn8.0.5_0' "
+        "cudatoolkit=11.1 "
+        # MKL pinning: pytorch 1.9 binaries reference iJIT_NotifyEvent from
+        # libittnotify (old Intel ITT layer); MKL 2022+ removed it. Pin to
+        # the 2021.4.0 era that matches pytorch 1.9's binary linkage.
+        "'mkl=2021.4.0' "
+        "openmm=7.7 mdtraj=1.9.7 pdbfixer=1.8.1 biopython=1.79 "
+        "ase=3.22.1 numpy=1.21 "
+        "&& /opt/conda/bin/micromamba clean -a -y",
+    )
+    .run_commands(
+        # Pip-installable extras that aren't on conda-forge with the right pins.
+        "/opt/conda/envs/tw/bin/pip install --no-cache-dir "
+        "'protobuf~=3.19.0' tensorboard einops omegaconf tqdm pyyaml docopt "
+        "psutil cached-property multimethod gitpython monty "
+        "'setuptools==59.5.0' deeptime "
+        f"git+https://github.com/noegroup/bgflow.git "
         "huggingface_hub",
-        "numpy<2",
-        "einops",
-        "gemmi",
+    )
+    .run_commands(
+        # Timewarp itself has no setup.py — clone as /opt/timewarp and
+        # rely on PYTHONPATH=/opt (set in .env above) for `import timewarp`.
+        f"git clone https://github.com/microsoft/timewarp.git /opt/timewarp && "
+        f"cd /opt/timewarp && git checkout {TIMEWARP_SHA}",
+    )
+    .run_commands(
+        # Sanity check the install at image-build time (fail loudly here, not
+        # at runtime). Confirms timewarp + bgflow + torch are all importable.
+        "/opt/conda/envs/tw/bin/python -c "
+        "'import torch; print(\"torch\", torch.__version__, \"cuda?\", torch.cuda.is_available()); "
+        "import timewarp; print(\"timewarp ok\"); "
+        "import bgflow; print(\"bgflow ok\"); "
+        "import openmm; print(\"openmm\", openmm.version.full_version)'",
     )
 )
 
-VOLUME_NAME = "chimerax-vampnet-md"  # reuse the main MD volume for weight cache
+VOLUME_NAME = "chimerax-vampnet-md"
 app = modal.App(APP_NAME, image=image)
 vol = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True)
 VOL_MOUNT = "/vol"
 
+# Reuse the project-wide HF token for dataset+checkpoint downloads (the
+# microsoft/timewarp dataset is currently public, but the pattern + token
+# costs nothing extra and future-proofs if it ever gets gated).
+HF_SECRET = modal.Secret.from_name("huggingface-secret")
 
-@app.function(gpu="A100-40GB", timeout=4 * 3600, volumes={VOL_MOUNT: vol})
-def sample_remote(pdb_bytes: bytes, name: str,
-                  n_mcmc_steps: int = 5000, burnin: int = 500,
-                  save_stride: int = 10, temperature_K: float = 300.0) -> bytes:
-    """Run Timewarp MCMC: each step proposes a large-time-step move via the
-    learned flow, accepts/rejects against the energy model. Returns the
-    post-burnin chain at the requested save stride.
-
-    Output schema matches the other generative adapters (coords / coords_ca /
-    seqres / chain_id / plddt-placeholder), with extra fields:
-      accept_rate     : float
-      autocorr_time   : float   (estimated from the saved chain)
-    """
-    import io
-
-    import numpy as np
-    import torch
-
-    # First-invocation TODO: verify package name + entry-point names.
-    from timewarp import MCMCSampler, load_pretrained  # noqa: F401 — verify
-
-    pdb_path = Path("/tmp/system.pdb")
-    pdb_path.write_bytes(pdb_bytes)
-
-    print(f"[timewarp] {name}: {n_mcmc_steps} MCMC steps, "
-          f"burnin={burnin}, save_stride={save_stride}, T={temperature_K} K")
-
-    cache_dir = Path(VOL_MOUNT) / "timewarp_weights"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    model = load_pretrained(cache_dir=str(cache_dir))  # T2-4 residue release
-    model = model.cuda().eval()
-
-    sampler = MCMCSampler(model, temperature_K=temperature_K)
-    chain = sampler.run(pdb_path=str(pdb_path),
-                         n_steps=n_mcmc_steps,
-                         burnin=burnin, save_stride=save_stride)
-    # Expected chain fields:
-    #   chain.coords      : (n_kept, n_atoms, 3)
-    #   chain.ca_mask     : (n_atoms,) bool
-    #   chain.accept_rate : float
-    coords_all = np.asarray(chain.coords, dtype=np.float32)
-    ca_mask = np.asarray(chain.ca_mask, dtype=bool)
-    coords_ca = coords_all[:, ca_mask, :]
-    n_kept = coords_all.shape[0]
-    accept_rate = float(chain.accept_rate)
-    print(f"[timewarp] kept {n_kept} samples, accept rate {accept_rate:.3f}, "
-          f"coords {coords_all.shape}, coords_ca {coords_ca.shape}")
-
-    # Crude autocorr estimate on CA-RMSD-to-frame-0 for diagnostics.
-    diff = coords_ca - coords_ca[:1]
-    rmsd = np.sqrt(((diff) ** 2).sum(-1).mean(-1))
-    autocorr = float(_integrated_autocorr(rmsd))
-
-    chain_id_per_res = np.zeros(int(ca_mask.sum()), dtype=np.int64)
-
-    buf = io.BytesIO()
-    np.savez_compressed(
-        buf,
-        coords=coords_all,
-        coords_ca=coords_ca,
-        seqres=np.array(getattr(chain, "seqres", "")),
-        chain_id=chain_id_per_res,
-        plddt=np.full(n_kept, np.nan, dtype=np.float32),
-        iptm=np.full(n_kept, np.nan, dtype=np.float32),
-        accept_rate=np.array(accept_rate, dtype=np.float32),
-        autocorr_time=np.array(autocorr, dtype=np.float32),
-        temperature_K=np.array(temperature_K, dtype=np.float32),
-    )
-    vol.commit()
-    return buf.getvalue()
+PYTHON = "/opt/conda/envs/tw/bin/python"
 
 
-def _integrated_autocorr(x):
-    """Simple integrated autocorrelation time estimate for a 1D series."""
-    import numpy as np
-    x = np.asarray(x) - np.mean(x)
-    n = len(x)
-    if n < 4:
-        return 1.0
-    # FFT-based autocorr
-    f = np.fft.fft(x, n=2 * n)
-    acf = np.fft.ifft(f * np.conj(f))[:n].real
-    acf /= acf[0] + 1e-12
-    # Truncate at first negative sample
-    neg = np.where(acf < 0)[0]
-    cutoff = int(neg[0]) if len(neg) else min(n, 100)
-    return 1.0 + 2.0 * float(acf[1:cutoff].sum())
+@app.function(gpu="A100-40GB", timeout=600, volumes={VOL_MOUNT: vol},
+              secrets=[HF_SECRET])
+def smoke_remote() -> dict:
+    """Pipeline smoke: confirms image build, conda env activation, and
+    that timewarp + torch + bgflow + openmm all import + CUDA is visible.
+    No model load yet — that's rev 3."""
+    import subprocess
+    import sys
+    print(f"[timewarp-smoke] python={PYTHON}")
+    r = subprocess.run([PYTHON, "-c",
+        "import torch, timewarp, bgflow, openmm, mdtraj, ase, deeptime; "
+        "print('torch', torch.__version__); "
+        "print('cuda available:', torch.cuda.is_available()); "
+        "print('cuda device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none'); "
+        "print('timewarp', getattr(timewarp, '__version__', '?')); "
+        "print('bgflow', getattr(bgflow, '__version__', '?')); "
+        "print('openmm', openmm.version.full_version); "
+        "print('mdtraj', mdtraj.version.version); "
+        "print('deeptime', deeptime.__version__);"
+    ], capture_output=True, text=True)
+    print(r.stdout)
+    if r.returncode != 0:
+        print("STDERR:", r.stderr, file=sys.stderr)
+    return {
+        "ok": r.returncode == 0,
+        "stdout": r.stdout,
+        "stderr": r.stderr[-500:] if r.stderr else "",
+        "timewarp_sha": TIMEWARP_SHA,
+    }
 
 
 @app.local_entrypoint()
-def sample(pdb: str, name: str = "system", n_mcmc_steps: int = 5000,
-           burnin: int = 500, save_stride: int = 10,
-           temperature: float = 300.0, out: str = ""):
-    """Run Timewarp MCMC on a small peptide system (released checkpoint
-    trained for 2-4-residue peptides — extrapolation is exploratory)."""
-    pdb_bytes = Path(pdb).read_bytes()
-    print(f"[local] Timewarp on {name}, {len(pdb_bytes)} bytes PDB, "
-          f"{n_mcmc_steps} steps")
-    data = sample_remote.remote(pdb_bytes, name,
-                                 n_mcmc_steps=n_mcmc_steps,
-                                 burnin=burnin, save_stride=save_stride,
-                                 temperature_K=temperature)
-    out_path = Path(out) if out else Path(f"{name}_timewarp.npz")
+def smoke():
+    """Smoke-test the Timewarp image only (no model load yet)."""
+    print("[local] launching Timewarp image smoke")
+    result = smoke_remote.remote()
+    print(f"[local] smoke result: {result}")
+
+
+@app.function(gpu="A100-40GB", timeout=4 * 3600, volumes={VOL_MOUNT: vol},
+              secrets=[HF_SECRET])
+def sample_remote(protein: str = "alanine-dipeptide", n_samples: int = 1000,
+                   n_proposal_steps: int = 1000) -> bytes:
+    """[Rev 3 TODO — currently raises NotImplementedError]
+
+    Planned: download microsoft/timewarp/AD-3 dataset + checkpoint via
+    huggingface_hub, run evaluate.py with --mh, parse outputs to .npz
+    in the shared {coords, coords_ca, seqres, chain_id, plddt, iptm,
+    accept_rate, autocorr_time, temperature_K} schema.
+    """
+    raise NotImplementedError(
+        "sample_remote pending: rev 3 (after smoke validates image build). "
+        "Need to wire HF download of AD-3 + checkpoint, then shell out to "
+        "evaluate.py from the cloned timewarp repo."
+    )
+
+
+@app.local_entrypoint()
+def sample(protein: str = "alanine-dipeptide", n_samples: int = 1000,
+           n_proposal_steps: int = 1000, out: str = ""):
+    """[Rev 3 TODO] Placeholder; use `smoke` for now."""
+    print(f"[local] sample for {protein} not yet implemented (rev 3)")
+    data = sample_remote.remote(protein, n_samples, n_proposal_steps)
+    out_path = Path(out) if out else Path(f"{protein}_timewarp.npz")
     out_path.write_bytes(data)
-    print(f"[local] wrote {out_path} ({len(data)/(1<<20):.1f} MB)")
