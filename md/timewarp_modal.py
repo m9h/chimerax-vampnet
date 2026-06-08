@@ -422,11 +422,15 @@ def main():
     model = unwrap_loss_wrapper(load_model(path=args.savefile)).to(device).eval()
     print(f"[script] model loaded: {type(model).__name__}", flush=True)
 
-    # The dataset API expects a step_width (number of MD steps between
-    # the conditioning frame and the predicted frame). For the released
-    # 2aa model the convention is 1000 (1 ns at 1 fs); confirm from cfg
-    # if a future model uses a different stride.
-    step_width = 1000
+    # Read step_width from the model\\'s training config — the 2aa release
+    # uses step_width=1_000_000 (1 ns at 1 fs); hardcoding 1000 (rev 22)
+    # produced 0 MH acceptance because proposals + Boltzmann distributions
+    # were sampling completely different time horizons.
+    import yaml
+    with open(args.config) as _cf:
+        _cfg = yaml.safe_load(_cf)
+    step_width = int(_cfg["step_width"])
+    print(f"[script] step_width={step_width} (from config)", flush=True)
     dataset = RawMolDynDataset(data_dir=args.data_dir, step_width=step_width)
     it = dataset.make_iterator([args.protein])
     batch = moldyn_dense_collate_fn([next(it)])
