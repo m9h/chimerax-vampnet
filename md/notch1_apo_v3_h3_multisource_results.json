@@ -1,5 +1,5 @@
 {
-  "system": "hsp90_ntd",
+  "system": "notch1_apo_v3",
   "sources_loaded": [
     "MD",
     "MarS-FM",
@@ -9,9 +9,9 @@
     "ESMFold2"
   ],
   "n_frames_per_source": {
-    "MD": 45000,
+    "MD": 1500,
     "MarS-FM": 200,
-    "BioEmu": 188,
+    "BioEmu": 169,
     "Boltz-2": 200,
     "AlphaFlow": 200,
     "ESMFold2": 200
@@ -21,9 +21,9 @@
   "state_breakdown": [
     {
       "state": 0,
-      "population_pct": 29.21849178046447,
+      "population_pct": 56.176589712434186,
       "frac_of_src_in_state": {
-        "MD": 29.86,
+        "MD": 92.46666666666667,
         "MarS-FM": 0.0,
         "BioEmu": 0.0,
         "Boltz-2": 0.0,
@@ -33,38 +33,38 @@
     },
     {
       "state": 1,
-      "population_pct": 22.779855614508133,
+      "population_pct": 14.661806399351965,
       "frac_of_src_in_state": {
-        "MD": 21.25777777777778,
-        "MarS-FM": 61.0,
-        "BioEmu": 100.0,
-        "Boltz-2": 100.0,
-        "AlphaFlow": 100.0,
-        "ESMFold2": 100.0
+        "MD": 7.533333333333333,
+        "MarS-FM": 99.5,
+        "BioEmu": 29.585798816568047,
+        "Boltz-2": 0.0,
+        "AlphaFlow": 0.0,
+        "ESMFold2": 0.0
       }
     },
     {
       "state": 2,
-      "population_pct": 31.262503261720447,
+      "population_pct": 16.646415552855405,
       "frac_of_src_in_state": {
-        "MD": 31.948888888888888,
-        "MarS-FM": 0.0,
-        "BioEmu": 0.0,
-        "Boltz-2": 0.0,
-        "AlphaFlow": 0.0,
+        "MD": 0.0,
+        "MarS-FM": 0.5,
+        "BioEmu": 70.41420118343196,
+        "Boltz-2": 100.0,
+        "AlphaFlow": 45.5,
         "ESMFold2": 0.0
       }
     },
     {
       "state": 3,
-      "population_pct": 16.73914934330695,
+      "population_pct": 12.515188335358445,
       "frac_of_src_in_state": {
-        "MD": 16.933333333333334,
-        "MarS-FM": 39.0,
+        "MD": 0.0,
+        "MarS-FM": 0.0,
         "BioEmu": 0.0,
         "Boltz-2": 0.0,
-        "AlphaFlow": 0.0,
-        "ESMFold2": 0.0
+        "AlphaFlow": 54.50000000000001,
+        "ESMFold2": 100.0
       }
     }
   ]

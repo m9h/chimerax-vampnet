@@ -4,26 +4,21 @@ Self-contained environment recipe — each Modal adapter in md/ builds
 its own image rather than sharing a base, so dep collisions stay
 isolated to the tool that needs them.
 
-  Base image:   modal.Image.debian_slim(python_version=3.11)
-                (same rationale as boltz_modal.py: NGC PyTorch's
-                bundled scipy ABI collides with HF transformers' deps;
-                a clean debian_slim + pip toolchain "just works")
-  Pip extras:   torch (cu124), transformers (>= the release that ships
-                models.esmfold2), the biohub `esm` package, biopython,
-                huggingface_hub, numpy<2
+  Base image:   modal.Image.debian_slim(python_version=3.12)
+                (biohub/esm pyproject pins requires-python >=3.12,<3.13)
+  Pip extras:   torch 2.4.1 (cu124); `esm` and `transformers` BOTH from
+                the Biohub git forks (PyPI `esm` 3.2.3 is the unrelated
+                facebookresearch/esm package and lacks models.esmfold2);
+                rdkit/biotite/msgpack-numpy/einops/ipython per the
+                upstream pyproject's required deps
   Weights:      biohub/ESMFold2 on HuggingFace (MIT) — auto-pulled by
                 ESMFold2Model.from_pretrained on first call
   GPU pin:      A100-80GB
-  Tested:       UNTESTED as of v0.7.4 — first run pending. The exact
-                package name + version for the `esm` import
-                (`from esm.models.esmfold2 import ...`) and the
-                transformers path
-                (`transformers.models.esmfold2.modeling_esmfold2`)
-                are taken from the ESMFold2 release README
-                (github.com/atong01/esmfold2, forked from Biohub/esm)
-                and need confirmation against the actual HF model card
-                on first invocation. If the import path differs, only
-                _ESM_IMPORT and the image recipe below need editing.
+  Tested:       v0.8 Phase 1 first attempt failed on 2026-06-07 with
+                ModuleNotFoundError (PyPI `esm` was facebookresearch/esm,
+                Python 3.11 violated upstream pyproject); image recipe
+                now matches https://github.com/Biohub/esm pyproject.toml
+                main, retest pending.
 
 ESMFold2 (Rives et al. 2026, "A World Model of Protein Biology",
 biohub.org) is an AF3-class diffusion structure/complex predictor on
@@ -100,25 +95,32 @@ _ESM_IMPORT = (
 )
 
 image = (
-    # Clean debian_slim + pip, same call as boltz_modal.py — avoids the
-    # NGC PyTorch scipy ABI cascade that bit the v0.4 Boltz attempts.
-    modal.Image.debian_slim(python_version="3.11")
+    # biohub/esm pyproject pins requires-python = ">=3.12,<3.13" and a custom
+    # transformers fork — PyPI `esm` (3.2.3) is facebookresearch/esm and has
+    # no models.esmfold2 module, so we MUST install both from git.
+    modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "build-essential", "wget")
     .pip_install(
         "torch==2.4.1",
         index_url="https://download.pytorch.org/whl/cu124",
     )
     .pip_install(
-        # transformers must be new enough to expose models.esmfold2; the
-        # `esm` package is the biohub release that defines the input
-        # builders. Pin both once the first run confirms working versions.
-        "transformers>=4.50",
-        "esm",  # biohub/esm — if PyPI name differs use git+https://github.com/Biohub/esm.git
+        "esm @ git+https://github.com/Biohub/esm.git@main",
+        "transformers @ git+https://github.com/Biohub/transformers.git@main",
         "accelerate",
         "biopython",
         "mdtraj",
         "huggingface_hub",
         "numpy<2",
+        "rdkit",
+        "biotite>=1.0.0",
+        "msgpack-numpy",
+        "einops",
+        "ipython",
+        # gemmi: canonical mmCIF parser. ESMFold2's complex.to_mmcif()
+        # emits a minimal mmCIF without _atom_site.occupancy, which
+        # Biopython's MMCIFParser rejects; gemmi is tolerant.
+        "gemmi",
     )
 )
 
@@ -206,11 +208,10 @@ def sample_remote(chain_seqs: list, name: str, n_samples: int = 200,
     each to coords, and returns a packed (all-atom + CA-only) .npz as
     bytes — shape-compatible with the boltz/marsfm loaders."""
     import io
-    import tempfile
 
+    import gemmi
     import numpy as np
     import torch
-    from Bio.PDB.MMCIFParser import MMCIFParser
 
     exec(_ESM_IMPORT, globals())
 
@@ -229,9 +230,8 @@ def sample_remote(chain_seqs: list, name: str, n_samples: int = 200,
                    for cid, seq in chain_seqs]
     )
 
-    cif_parser = MMCIFParser(QUIET=True)
-
     coords_all = []
+    atom_names_ref = None
     plddts = []
     iptms = []
     for s in range(n_samples):
@@ -244,12 +244,20 @@ def sample_remote(chain_seqs: list, name: str, n_samples: int = 200,
                 seed=s,
             )
         # result.complex.to_mmcif() -> mmCIF text for the predicted complex.
-        with tempfile.NamedTemporaryFile("w", suffix=".cif", delete=True) as f:
-            f.write(result.complex.to_mmcif())
-            f.flush()
-            structure = cif_parser.get_structure(name, f.name)
-        atoms = list(next(structure.get_models()).get_atoms())
-        xyz = np.array([a.get_coord() for a in atoms], dtype=np.float32)
+        # Parse with gemmi (tolerant of missing _atom_site.occupancy that
+        # ESMFold2's minimal writer omits, which Biopython rejects).
+        cif_doc = gemmi.cif.read_string(result.complex.to_mmcif())
+        structure = gemmi.make_structure_from_block(cif_doc.sole_block())
+        xyz = []
+        names = []
+        for sm_model in structure:
+            for chain in sm_model:
+                for res in chain:
+                    for atom in res:
+                        xyz.append((atom.pos.x, atom.pos.y, atom.pos.z))
+                        names.append(atom.name)
+            break  # only the first NMR-style model (ESMFold2 emits one)
+        xyz = np.asarray(xyz, dtype=np.float32)
         coords_all.append(xyz)
         # Confidence metadata for downstream filtering / QC.
         try:
@@ -258,9 +266,10 @@ def sample_remote(chain_seqs: list, name: str, n_samples: int = 200,
         except Exception:
             pass
         if s == 0:
-            # Capture CA mask + atom/chain labels from the first sample;
-            # atom ordering is identical across seeds (same complex spec).
-            ca_mask = np.array([a.get_name() == "CA" for a in atoms], dtype=bool)
+            atom_names_ref = names
+            # Atom ordering is identical across seeds (same complex spec),
+            # so the CA mask from sample 0 applies to all samples.
+            ca_mask = np.array([n == "CA" for n in names], dtype=bool)
             n_ca = int(ca_mask.sum())
             print(f"[esmfold2] sample 0: {xyz.shape[0]} atoms, {n_ca} CAs")
         if (s + 1) % 25 == 0:
