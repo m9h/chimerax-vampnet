@@ -79,7 +79,13 @@ image = (
         "rm /tmp/mm.tar.bz2",
     )
     .env({
-        "PATH": "/opt/conda/bin:/opt/conda/envs/tw/bin:/usr/bin:/bin",
+        # NOTE: don't prepend /opt/conda/envs/tw/bin to PATH — the conda
+        # env's Python 3.8 would shadow Modal's bootstrap Python 3.11
+        # (Modal requires ≥3.10). The conda-env workload is invoked
+        # explicitly via PYTHON = "/opt/conda/envs/tw/bin/python".
+        # /usr/local/bin first so Modal's add_python="3.11" binary is
+        # the canonical `python` in PATH (Modal needs to detect it).
+        "PATH": "/usr/local/bin:/opt/conda/bin:/usr/bin:/bin",
         "MAMBA_ROOT_PREFIX": "/opt/conda",
         # Match upstream's CUDA-11.1 binding.
         "CONDA_OVERRIDE_CUDA": "11.1",
