@@ -31,15 +31,20 @@ jobs:
           # tests/ suite, which doesn't need CUDA. mdtraj is needed by
           # test_chimerax_integration's helpers (skipped in CI anyway).
           pip install --extra-index-url https://download.pytorch.org/whl/cpu \
-              "torch" "deeptime>=0.4" "mdtraj" "numpy<2" "scipy" "pytest"
+              "torch" "deeptime>=0.4" "mdtraj" "numpy<2" "scipy" "pytest" "pytest-cov"
 
       - name: Run pytest (excludes ChimeraX integration test)
         run: |
           # test_chimerax_integration.py auto-skips when no chimerax
           # binary is on PATH, so it's safe to include but we exclude
           # it explicitly to keep CI deterministic.
+          # --cov measures src/ and md/rsi/ on the full (torch-enabled)
+          # suite, so the reported number is the real one — not the
+          # dependency-light local slice. No --cov-fail-under yet; we
+          # establish the baseline first, then ratchet it up.
           pytest tests/ -v \
-            --ignore=tests/test_chimerax_integration.py
+            --ignore=tests/test_chimerax_integration.py \
+            --cov=src --cov=md/rsi --cov-report=term-missing
 
       - name: Print Python + dep versions on failure
         if: failure()
