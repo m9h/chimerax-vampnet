@@ -225,8 +225,8 @@ ensembles you already have.
 ### Quickstart: chignolin tutorial
 
 ```
-open chignolin/equilibrated.pdb
-vampnet load_ensemble md chignolin/replica_0/traj.dcd source md
+open /data/datasets/chimerax-vampnet/chignolin_modal/chignolin/equilibrated.pdb
+vampnet load_ensemble md /data/datasets/chimerax-vampnet/chignolin_modal/chignolin/replica_0/traj.dcd source md
 vampnet fit nStates 2 lag 100 features ca_distances epochs 80
 vampnet states                # colors structure folded vs unfolded
 vampnet means                 # builds 2 mean structures
