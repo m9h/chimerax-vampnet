@@ -1,4 +1,15 @@
-# chimerax-vampnet
+# 🧬 chimerax-vampnet
+
+[![version](https://img.shields.io/badge/version-v0.10-1f6feb)](CITATION.cff)
+[![license](https://img.shields.io/badge/license-MIT-3fb950)](LICENSE)
+[![UCSF ChimeraX](https://img.shields.io/badge/UCSF-ChimeraX-f6862d)](https://www.cgl.ucsf.edu/chimerax/)
+[![python](https://img.shields.io/badge/python-3.9%E2%80%933.12-3776ab)](pyproject.toml)
+[![tests](https://img.shields.io/badge/tests-49%20passing-2ea043)](tests/)
+[![frontier models](https://img.shields.io/badge/frontier%20models-11-8957e5)](md/)
+[![runs on Modal](https://img.shields.io/badge/runs%20on-Modal-7c3aed)](https://modal.com/)
+[![method](https://img.shields.io/badge/method-VAMPnet%20%2B%20MSM-08979c)](https://deeptime-ml.github.io/)
+![built for](https://img.shields.io/badge/built%20for-HTGAA%20%C2%B7%20Biopunk%20Lab-db61a2)
+[![sister project](https://img.shields.io/badge/sister%20project-chimerax--origami-58a6ff)](../dna-origami)
 
 **A teaching resource for learning protein structure and dynamics by
 driving frontier biomolecular models — built for the Biopunk Lab
@@ -26,7 +37,7 @@ capture that.
 
 ---
 
-## The big idea: structure → ensemble → landscape
+## 🔭 The big idea: structure → ensemble → landscape
 
 A crystal structure is **one** snapshot. A protein's *function* lives
 in the **ensemble** of shapes it visits — and in the **landscape** of
@@ -53,7 +64,13 @@ is the central teaching moment — and a live research question.
 
 ---
 
-## The frontier-model catalog (`md/*_modal.py`)
+## 🚀 The frontier-model catalog (`md/*_modal.py`)
+
+> **🔗 Seminar connection.** Many of these models were first presented
+> in the **Starkly Speaking** seminar series (UMA, Timewarp, OM-TPS,
+> Plainer-EDM, Prose, StABlE all carry a talk date in their adapter
+> docstring). The catalog turns each of those talks into something a
+> student can *re-run*, not just read about.
 
 Each adapter builds **its own** [Modal](https://modal.com/) cloud image
 (self-contained — dependency collisions stay isolated to the one tool
@@ -120,7 +137,7 @@ checkpoint provenance, and the date it was last verified.
 
 ---
 
-## The analysis layer: ChimeraX VAMPnet bundle
+## 🔬 The analysis layer: ChimeraX VAMPnet bundle
 
 8 modules, 1375 LOC, 49 tests. Once you have ensembles, the bundle
 turns them into a landscape you can see and steer:
@@ -144,7 +161,7 @@ sister project (below) uses for design.
 
 ---
 
-## A worked student path
+## 🎓 A worked student path
 
 1. **Pick a target.** Start small — alanine dipeptide or chignolin —
    then graduate to a real receptor.
@@ -171,7 +188,7 @@ sister project (below) uses for design.
 
 ---
 
-## Sister project: `chimerax-origami` — same idea, in DNA
+## 🔗 Sister project: `chimerax-origami` — same idea, in DNA
 
 This bundle has a deliberate mirror image,
 [`chimerax-origami`](../dna-origami), built for the **DNA-origami**
@@ -206,7 +223,7 @@ folding a protein or assembling a nanostructure.
 
 ---
 
-## Install (development)
+## ⚙️ Install (development)
 
 ```bash
 # From within ChimeraX:
@@ -248,7 +265,7 @@ unit tests run against mock fixtures.
 
 ---
 
-## What works, and what's still rough (read this)
+## ⚠️ What works, and what's still rough (read this)
 
 Frontier tooling is *frontier* — honest friction is part of the
 lesson. Current state:
@@ -271,7 +288,7 @@ tried. That trail is deliberately preserved as teaching material.
 
 ---
 
-## License & citation
+## 📄 License & citation
 
 MIT — see `LICENSE`. If you use this bundle, please cite the underlying
 method:

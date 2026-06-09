@@ -28,9 +28,11 @@ keywords:
   - boltz-2
   - bioemu
   - mars-fm
+  - esmfold2
   - mcp
-version: "0.6.0"
-date-released: "2026-06-03"
+  - htgaa
+version: "0.10.0"
+date-released: "2026-06-09"
 references:
   - type: article
     authors:

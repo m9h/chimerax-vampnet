@@ -3,7 +3,7 @@ conformational ensembles, integrated into the ChimeraX visualization
 environment.
 """
 
-__version__ = "0.6.0"
+__version__ = "0.10.0"
 
 from chimerax.core.toolshed import BundleAPI
 
