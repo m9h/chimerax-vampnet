@@ -136,48 +136,68 @@ THREE_TO_ONE = {
 
 
 def _pdb_to_chain_seqs(pdb_bytes: bytes, chain_id: str | None = None):
-    """Parse a PDB into [(chain_label, seqres), ...].
+    """Parse a PDB into [(chain_label, seqres), ...]. Stdlib-only.
+
+    Was Biopython-based; rewritten 2026-06-09 because the modal CLI is
+    installed in ~/.local/bin via uv and its Python doesn't share the
+    project .venv's deps, so any biopython import in a @local_entrypoint
+    fails with ModuleNotFoundError.
 
     chain_id options (mirrors marsfm_modal._pdb_to_atom14_and_seqres):
         None        -> every protein chain, in PDB iteration order
         "X,K"       -> exactly those chains, in the order listed
         "<letter>"  -> that single chain
     Chain labels handed to ESMFold2's ProteinInput.id are re-issued as
-    A, B, C, ... in selection order (decoupled from the PDB letters) so
-    the input is always a clean contiguous set.
+    A, B, C, ... in selection order so the input is always contiguous.
+    Non-standard residues (not in THREE_TO_ONE) are dropped silently;
+    chains with zero standard residues after filtering are skipped.
     """
-    import io
-    from Bio.PDB import PDBParser
-    from Bio.PDB.Polypeptide import is_aa
+    # Per-chain ordered list of one-letter codes, deduped on (chain,
+    # resseq) so altLoc and side-chain disorder don't double-count.
+    chains: dict[str, list[str]] = {}
+    chain_order: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    for raw_line in pdb_bytes.decode("utf-8", errors="replace").splitlines():
+        if not raw_line.startswith("ATOM"):
+            continue
+        if raw_line[12:16].strip() != "CA":
+            continue
+        chain = raw_line[21:22]
+        resname = raw_line[17:20].strip()
+        resseq = raw_line[22:27].strip()  # includes insertion code col
+        key = (chain, resseq, resname)
+        if key in seen:
+            continue
+        seen.add(key)
+        if chain not in chains:
+            chains[chain] = []
+            chain_order.append(chain)
+        aa = THREE_TO_ONE.get(resname)
+        if aa is not None:
+            chains[chain].append(aa)
 
-    parser = PDBParser(QUIET=True)
-    structure = parser.get_structure("p", io.StringIO(pdb_bytes.decode("utf-8")))
-    model = next(structure.get_models())
+    def chain_seq(cid: str) -> str:
+        return "".join(chains.get(cid, []))
 
-    def chain_seq(chain):
-        return "".join(
-            THREE_TO_ONE[r.get_resname()]
-            for r in chain
-            if is_aa(r, standard=True) and r.get_resname() in THREE_TO_ONE
-        )
-
-    out = []
+    out: list[tuple[str, str]] = []
     if chain_id is None:
-        for chain in model:
-            s = chain_seq(chain)
+        for cid in chain_order:
+            s = chain_seq(cid)
             if s:
-                out.append((chain.id, s))
+                out.append((cid, s))
     elif "," in chain_id:
         for wid in (c.strip() for c in chain_id.split(",")):
-            s = chain_seq(model[wid])
+            s = chain_seq(wid)
             if s:
                 out.append((wid, s))
     else:
-        s = chain_seq(model[chain_id])
+        s = chain_seq(chain_id)
         if s:
             out.append((chain_id, s))
     if not out:
-        raise ValueError("no protein chain found for the requested selection")
+        raise ValueError(
+            f"no protein chain found for selection {chain_id!r} in PDB "
+            f"(available chains: {list(chains.keys())})")
     # Re-issue clean ids A, B, C, ... in selection order.
     return [(chr(ord("A") + i), s) for i, (_, s) in enumerate(out)]
 
