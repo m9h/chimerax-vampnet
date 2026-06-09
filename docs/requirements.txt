@@ -1,0 +1,3 @@
+# Docs toolchain for the mkdocs teaching site.
+# Build locally:  pip install -r docs/requirements.txt && mkdocs serve
+mkdocs-material>=9.5

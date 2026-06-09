@@ -1,0 +1,61 @@
+site_name: chimerax-vampnet
+site_description: >-
+  A teaching resource for learning protein structure and dynamics by driving
+  frontier biomolecular models — built for the Biopunk Lab HTGAA course.
+site_url: https://m9h.github.io/chimerax-vampnet/
+repo_url: https://github.com/m9h/chimerax-vampnet
+repo_name: m9h/chimerax-vampnet
+edit_uri: edit/main/docs/
+copyright: MIT — Morgan Hough
+
+theme:
+  name: material
+  icon:
+    logo: material/dna
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.top
+    - navigation.instant
+    - navigation.tracking
+    - toc.follow
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Frontier-model catalog: catalog.md
+  - Student workflow: workflow.md
+  - Analysis layer: analysis.md
+  - Validation systems: systems.md
+  - Connections: connections.md
