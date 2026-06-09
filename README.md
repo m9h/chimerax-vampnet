@@ -1,75 +1,210 @@
 # chimerax-vampnet
 
-VAMPnets + Markov state modeling of protein conformational landscapes,
-integrated into UCSF ChimeraX. Loads heterogeneous ensembles (MD,
-AlphaFlow, BioEmu) on equal footing, trains a VAMPnet (Mardt et al.
-2018) via [deeptime](https://deeptime-ml.github.io/), and surfaces
-metastable states + transition rates as ChimeraX models, animations,
-and structured CLI output.
+**A teaching resource for learning protein structure and dynamics by
+driving frontier biomolecular models — built for the Biopunk Lab
+HTGAA ("How To Grow Almost Anything") course.**
 
-Every command returns JSON-serializable data so an MCP-capable LLM
-agent (Claude Desktop, Cursor, etc.) can drive an adaptive analysis
-loop via the included HTTP bridge.
+This repository is two things at once:
 
-## Status — v0.3
+1. A **ChimeraX bundle** that loads heterogeneous structural ensembles
+   (classical MD, AlphaFlow, BioEmu, Boltz-2, …) on equal footing,
+   trains a VAMPnet (Mardt et al. 2018) via
+   [deeptime](https://deeptime-ml.github.io/), and surfaces metastable
+   states + transition rates as ChimeraX models, animations, and
+   structured CLI output.
+2. A **catalog of working cloud recipes** for invoking ~11 frontier
+   protein models — the kind announced in papers and seminars but
+   rarely runnable without a week of dependency archaeology. Each one
+   is a single `modal run` away.
 
-**1184 LOC across 8 modules, 18/18 tests green; v0.3 adds COM-distance restraint for NRR membrane anchor.**
+The goal is not a new scientific discovery. The goal is to let a
+student **reproduce frontier-research workflows end to end** — pick a
+protein, generate conformational ensembles from a dozen different
+models, and *see* its energy landscape — and in doing so learn how
+structure becomes dynamics, and how today's models do (and don't)
+capture that.
 
-| Module | Lines | Status |
-|---|---:|---|
-| `src/cmd.py` | 234 | ChimeraX command registration (11 commands) |
-| `src/featurize.py` | 226 | MD / AlphaFlow / BioEmu loaders + CA-distance + backbone-torsion features |
-| `src/viz.py` | 204 | `color_by_state` (live recolor on coordset change) + `build_state_means` |
-| `src/mcp_server.py` | 195 | HTTP/JSON bridge for LLM agents |
-| `src/vampnet_core.py` | 151 | `fit` (deeptime VAMPNet + MLP lobe) + `save`/`load` |
-| `src/animate.py` | 88 | Slow-mode animation between extreme metastable states |
-| `src/msm.py` | 64 | MSM transition graph (nodes + edges) |
-| `src/__init__.py` | 22 | BundleAPI subclass |
+---
 
-### Validation
+## The big idea: structure → ensemble → landscape
 
-- **Day-2 smoke test** (`tests/test_random_walk.py`): synthetic 4-state Markov chain → bundle featurize → deeptime VAMPNet wiring. ✅ Passes.
-- **Tier-1 (chignolin CLN025)**: self-generated 1 µs trajectory at 340 K on Modal H100, 4 fs HMR, $37. Bundle recovers:
-  - Slowest implied timescale **166 ns** (published reference: 100-500 ns)
-  - Clean folded vs unfolded state separation (Trp9-Tyr1 5.7 vs 15.6 Å)
-- **Tier-2 (Notch1 NRR apo + holo)**: apo + corrected-chain holo
-  trajectories under two restraint protocols. v0.2 unrestrained MD
-  (3×100 ns each, Modal A100-80GB): directional H2 **met** (+3.7 pp,
-  apo more auto-inhibited), magnitudes not met (apo 21.6% vs target
-  ≥50%, holo 17.9% vs target ≤30%) due to NRR-fragment dissociation
-  to >100 Å. v0.3 NEC-NTM COM-distance restraint (3×100 ns each):
-  same directional result (+3.8 pp), restraint cleanly eliminates
-  dissociation (COM sep std 24 Å → 0.3 Å), but magnitudes **still**
-  not met — isolates the 100 ns sampling horizon (not the restraint)
-  as the magnitude blocker. Full diagnostics:
-  `md/notch1_h2_results.md` (v0.2), `md/notch1_h2_v3_results.md` (v0.3).
-- **Wider robustness (ATLAS sweep)**: 4 public ATLAS trajectories
-  spanning all-α / mostly-β / mixed / large-α folds and 73-518
-  residues, all converge to non-degenerate 4-state decompositions
-  with 38-75 ns slow timescales. See `md/wider_atlas_results.md`.
-- **LLM-agent adaptive sampling demo**: `examples/adaptive_sampling_demo.py`
-  on the chignolin trajectory grows the slowest implied timescale
-  from 94 → 201 ns (2.1× improvement) via rare-state-targeted
-  re-sampling, exercising the MCP-stdio proxy end-to-end.
-
-## Commands
+A crystal structure is **one** snapshot. A protein's *function* lives
+in the **ensemble** of shapes it visits — and in the **landscape** of
+barriers between them. This repo teaches that progression hands-on:
 
 ```
-vampnet load_ensemble  source  path  [format auto|alphaflow|bioemu|md]
-vampnet fit             [n_states 4]  [lag 10]  [features ca_distances|torsions]  [epochs 200]
-vampnet timescales      [taus 1,2,5,10,20,50,100]
-vampnet states                       # color frames by state, live updates as you scrub
+   sequence / PDB
+        │
+        ▼   (frontier model OR classical MD — the catalog below)
+   conformational ensemble        ← "what shapes does it visit?"
+        │
+        ▼   (vampnet load_ensemble + fit, in ChimeraX)
+   metastable states + rates      ← "how is the landscape organized?"
+        │
+        ▼   (vampnet states / means / animate / network)
+   colored 3D models you can scrub, animate, and compare
+```
+
+The payoff is comparison: load an MD trajectory **and** an AlphaFlow
+ensemble **and** a BioEmu ensemble into the *same* VAMPnet, and you can
+literally watch which models explore the real conformational
+equilibrium and which collapse onto the crystal prior. That comparison
+is the central teaching moment — and a live research question.
+
+---
+
+## The frontier-model catalog (`md/*_modal.py`)
+
+Each adapter builds **its own** [Modal](https://modal.com/) cloud image
+(self-contained — dependency collisions stay isolated to the one tool
+that needs them) and emits a `.npz` of Cα coordinates that
+`vampnet load_ensemble` reads directly. Every recipe encodes hard-won,
+student-invisible knowledge: gated-HuggingFace access, CUDA/conda ABI
+pinning, multi-GPU fanout, stdlib-only PDB parsing for stripped-down
+cluster Pythons.
+
+> **Status legend** — ✅ *verified* end-to-end on a real system in this
+> project; 🧪 *scaffold* with first-invocation recipe drafted but not
+> yet run to completion (honestly marked — finishing these is itself a
+> great student exercise).
+
+### Conformational-ensemble generators
+
+| Model | What it gives you | Source / checkpoint | Status |
+|---|---|---|---|
+| **AlphaFlow / ESMFlow** | Flow-matching ensembles from sequence (Jing et al.) | `bjing-mit/alphaflow` | ✅ |
+| **BioEmu** (v1.3.1) | Emulated equilibrium ensemble (Microsoft Research) | `microsoft/bioemu` | ✅ |
+| **Boltz-2** | AF3-class diffusion structures, incl. membrane proteins | `boltz-community` | ✅ |
+| **MarS-FM** | Flow-matching in MSM state space (Kapusniak et al.) | `valencelabs/mars-fm` (MD-CATH 450) | ✅ |
+| **ESMFold2** | Multi-chain folded ensembles w/ per-seed sampling (Biohub) | `biohub/ESMFold2` | ✅ |
+| **Prose** | Transferable all-atom normalizing flow for peptides | `transferable-samplers/prose-280M` | 🧪 |
+
+### Force fields & physics-informed methods
+
+| Model | What it gives you | Source / checkpoint | Status |
+|---|---|---|---|
+| **UMA** (Meta FAIR) | Universal ML force field — drives *real MD*, not just snapshots | `facebook/UMA` (`uma-s-1p2`) | ✅ |
+| **Timewarp** | Normalizing-flow MCMC proposal; *trajectory-aware* (rates!) | `microsoft/timewarp` | ✅ MH on dipeptides¹ |
+| **Plainer EDM (ScoreMD)** | Fokker-Planck-consistent diffusion: sampler *and* integrator | `noegroup/ScoreMD` | 🧪 |
+| **OM-TPS** | Zero-shot transition-path sampling from any score model | `ASK-Berkeley/OM-TPS` | 🧪 |
+| **StABlE** | Stability-aware (physics-informed) NNIP *training* objective | `ASK-Berkeley/StABlE-Training` | 🧪 |
+
+### Classical baseline & enhanced sampling
+
+| Tool | What it gives you | Adapter |
+|---|---|---|
+| **OpenMM MD** | Ground-truth trajectories; soluble *and* POPC-membrane prep | `md/modal_md.py`, `md/prep.py`, `md/prep_membrane.py` |
+| **Metadynamics (PLUMED)** | 1D / 2D free-energy surfaces along chosen CVs | `md/notch1_metad_modal.py` |
+
+¹ Timewarp's Metropolis-Hastings loop runs end-to-end on alanine
+dipeptide; its 0-acceptance edge case (perfect state-dict load, but a
+downstream coordinate/topology mismatch) is documented in-repo as a
+worked example of the friction real frontier tools carry. An
+importance-sampling "rescue" path and arviz MCMC diagnostics ship
+alongside it (`md/mcmc_diagnostics.py`).
+
+**Typical invocation** (every adapter exposes a Modal `local_entrypoint`):
+
+```bash
+# Generate a 200-frame BioEmu ensemble for a sequence, save Cα npz:
+modal run md/bioemu_modal.py --sequence MKT...QHL --name my_protein --out my_protein_bioemu200.npz
+
+# Then, inside ChimeraX:
+vampnet load_ensemble bioemu my_protein_bioemu200.npz format bioemu
+```
+
+Gated models (UMA, some HF checkpoints) reuse one Modal
+`huggingface-secret`; you accept the model's terms once on its HF page.
+See each adapter's module docstring for the exact image recipe, the
+checkpoint provenance, and the date it was last verified.
+
+---
+
+## The analysis layer: ChimeraX VAMPnet bundle
+
+8 modules, 1375 LOC, 49 tests. Once you have ensembles, the bundle
+turns them into a landscape you can see and steer:
+
+```
+vampnet load_ensemble  source  path  [format auto|alphaflow|bioemu|md|marsfm]
+vampnet fit            [n_states 4] [lag 10] [features ca_distances|torsions] [epochs 200]
+vampnet timescales     [taus 1,2,5,10,20,50,100]   # implied-timescale convergence
+vampnet states                       # color frames by state, live as you scrub
 vampnet means                        # build per-state mean-structure models
-vampnet animate         [mode 1] [n_frames 100]
-vampnet network                      # transition matrix as a graph (nodes + edges)
-vampnet save            path
-vampnet load            path
-vampnet mcp serve       [port 7345]  # expose bundle to MCP-capable LLM agents
-vampnet mcp stop
+vampnet animate        [mode 1] [n_frames 100]      # slow-mode morph between extremes
+vampnet network                      # transition matrix as a graph
+vampnet save / load    path
+vampnet mcp serve      [port 7345]   # expose the bundle to an MCP LLM agent
 ```
 
-Each command returns a JSON-serializable dict (also visible in the
-ChimeraX log) that the MCP bridge proxies as a tool result.
+Every command returns a JSON-serializable dict, so an MCP-capable agent
+(Claude Desktop, Cursor, …) can drive an **adaptive analysis loop** via
+the included HTTP bridge — the same human/LLM-in-the-loop pattern the
+sister project (below) uses for design.
+
+---
+
+## A worked student path
+
+1. **Pick a target.** Start small — alanine dipeptide or chignolin —
+   then graduate to a real receptor.
+2. **Generate ensembles three ways:** classical MD (`md/modal_md.py`),
+   one flow model (AlphaFlow), one emulator (BioEmu).
+3. **Load all three into one VAMPnet** and `fit n_states 4`.
+4. **Compare.** Use `vampnet states` and `vampnet network`: does the
+   generative model populate the same basins MD does, or collapse to
+   one? (Spoiler from this project's runs: on Hsp90 NTD the generative
+   models collapse to the crystal prior while MD discovers a *closed-lid
+   cryptic state* — a real, re-runnable finding.)
+5. **Perturb and re-watch.** Add an antibody or ligand context and see
+   the stationary populations shift.
+
+### Validation systems already wired
+
+| System | Why it's interesting | What's in the repo |
+|---|---|---|
+| **Alanine dipeptide** | Canonical 5-basin Ramachandran toy | MD + Timewarp ensembles |
+| **Chignolin (CLN025)** | Fast-folder w/ DESRES Anton gold standard | 1 µs self-generated MD, folded/unfolded split |
+| **Notch1 NRR** | Membrane-receptor conformational *switch* (apo vs antibody-bound) | MD + 5 generative sources, multi-chain ESMFold2, metadynamics |
+| **Hsp90α NTD** | Chaperone w/ a cryptic drug pocket | MD + 5 sources; cryptic-state discovery |
+| **β2-adrenergic receptor** | Gold-standard Class-A GPCR, drug target | 5 generative ensembles + GPCR-specific structural analysis |
+
+---
+
+## Sister project: `chimerax-origami` — same idea, in DNA
+
+This bundle has a deliberate mirror image,
+[`chimerax-origami`](../dna-origami), built for the **DNA-origami**
+half of the same HTGAA curriculum. The two share **one abstraction —
+the contact map — and one thesis: folding/assembly reliability is the
+minimization of landscape *frustration*.**
+
+| | chimerax-vampnet | chimerax-origami |
+|---|---|---|
+| Object | protein conformational landscape | DNA-origami assembly landscape |
+| Input | MD / AlphaFlow / BioEmu ensembles | cadnano / scadnano / oxDNA designs |
+| Shared substrate | Cα–Cα **contact map** | base-pair **contact map** |
+| "Frustration" | metastable kinetic traps | off-target hybridization |
+| Inverse design | adaptive sampling | Pareto scaffold selection |
+| Perturbation | antibody shifts state populations | lipid envelope shifts in-vivo fate |
+| Driver | MCP LLM agent in the loop | MCP LLM agent in the loop |
+
+The connection is concrete, not just analogy: the Notch1 NRR is a
+*membrane* receptor, and the origami side wraps nanostructures in a
+*lipid envelope* (Perrault & Shih, virus-inspired encapsulation) — both
+projects independently land on the **membrane interface** as the
+boundary condition, and a membrane-binding event as the control knob
+that re-weights an ensemble. Stack them and you get a closed
+design–build–test–learn loop: origami builds the enveloped chassis,
+VAMPnet characterizes the protein cargo's dynamics, and an MCP agent
+drives both. See [`dna-origami/CONNECTIONS.md`](../dna-origami/CONNECTIONS.md)
+for the full treatment.
+
+For students, the lesson is transferable: **structure → contact map →
+landscape → de-frustration** is the same workflow whether you're
+folding a protein or assembling a nanostructure.
+
+---
 
 ## Install (development)
 
@@ -82,13 +217,12 @@ chimerax --nogui --exit --cmd "devel build /path/to/chimerax-vampnet"
 ```
 
 The bundle's only external runtime dependency is `deeptime>=0.4`.
-PyTorch is already shipped with ChimeraX's AlphaFold bundle so we
-don't redeclare it.
+PyTorch ships with ChimeraX's AlphaFold bundle, so we don't redeclare
+it. The `md/` adapters need a (free-to-start) [Modal](https://modal.com/)
+account; nothing in `md/` is required to use the ChimeraX bundle on
+ensembles you already have.
 
-## Quickstart: chignolin tutorial
-
-The shipped trajectory of CLN025 at 340 K demonstrates the full
-analysis pipeline. From a ChimeraX session:
+### Quickstart: chignolin tutorial
 
 ```
 open chignolin/equilibrated.pdb
@@ -100,101 +234,54 @@ vampnet animate mode 1 nFrames 100
 vampnet network               # transition rates
 ```
 
-Or run the .cxc walkthrough directly: `open examples/chignolin_tutorial.cxc`
+Or run the walkthrough directly: `open examples/chignolin_tutorial.cxc`
 
-## HTTP / MCP bridge
-
-`vampnet mcp serve` starts a stdlib HTTP server on the chosen port
-(default 7345). Endpoints:
-
-```
-GET  /health                   # {"status": "ok", "model_loaded": bool}
-GET  /tools                    # full MCP-compatible tool manifest
-POST /tools/vampnet_fit        # body: {"n_states": 4, "lag": 10, ...}
-POST /tools/vampnet_states     # ...
-POST /tools/vampnet_animate    # ...
-# etc
-```
-
-This is the substrate. A future v0.2 ships a stdio MCP proxy script so
-Claude Desktop / Cursor / Continue can speak MCP natively.
-
-## Test stack
+### Test stack
 
 ```bash
 python -m venv .venv && .venv/bin/pip install torch deeptime pytest
-.venv/bin/python -m pytest tests/
+.venv/bin/python -m pytest tests/          # 49 tests, no live ChimeraX needed
 ```
 
-All tests run **without** a live ChimeraX session via mock fixtures.
-ChimeraX integration is exercised through the .cxc tutorial.
+ChimeraX integration is exercised through the `.cxc` tutorials; all
+unit tests run against mock fixtures.
 
-## MD pipeline (`md/`)
+---
 
-The bundle ships with a self-contained MD pipeline for generating
-demo trajectories. Two backends:
+## What works, and what's still rough (read this)
 
-- **Local GB10**: `md/Dockerfile` + `md/run_md.sh` builds an OpenMM
-  CUDA aarch64 container (conda-forge `openmm=8.5.1`, 4 fs HMR,
-  CUDA 12.9). 2950 ns/day on alanine dipeptide, 270 ns/day on
-  chignolin.
-- **Modal cloud**: `md/modal_md.py` provides `prep` + `fanout`
-  entrypoints with H100 parallel replica spawn (`.spawn()` fire-
-  and-forget). 3050 ns/day on chignolin, ~950 ns/day on Notch1 NRR
-  apo, ~360 ns/day on Notch1 NRR holo at 4 fs.
+Frontier tooling is *frontier* — honest friction is part of the
+lesson. Current state:
 
-See `md/README.md` for the GB10 workflow and `md/modal_md.py` for the
-Modal cloud commands.
+- **Verified end-to-end** (✅ above): AlphaFlow, BioEmu, Boltz-2,
+  MarS-FM, ESMFold2, UMA, and OpenMM MD all produce real ensembles on
+  real systems in this repo.
+- **Partially working:** Timewarp samples but hits a 0-acceptance edge
+  case (documented as a worked debugging example, with an
+  importance-sampling rescue and MCMC diagnostics).
+- **Scaffolded (🧪):** Prose, Plainer-EDM/ScoreMD, OM-TPS, and StABlE
+  have drafted image recipes and first-invocation TODOs but haven't
+  been run to completion — finishing one is a self-contained project.
+- **Membrane MD** (β2AR) prep exists; the production run hit a
+  numerical instability at NVT equilibration and is deferred — a
+  realistic example of where membrane systems bite.
 
-## Roadmap
+When something fails, the module docstring records *why* and what was
+tried. That trail is deliberately preserved as teaching material.
 
-**v0.2 (shipped):**
-- ✅ MCP-stdio proxy for Claude Desktop / Cursor / Continue
-- ✅ Implied-timescales convergence test in `vampnet timescales`
-- ✅ Corrected-chain Notch1 holo prep + 3×100 ns A100-80GB MD
-- ✅ H2 directional verdict (+3.7 pp, magnitudes pending)
-- ✅ Wider ATLAS robustness sweep (4 proteins, 4 folds)
-- ✅ LLM-agent adaptive-sampling demonstration (2.1× slow IT growth)
+---
 
-**v0.3 (shipped):**
-- ✅ NEC-NTM COM-distance restraint (`CustomCentroidBondForce`,
-  replaces per-atom anchor — see `md/notch1_h2_v3_results.md` and
-  `md/prep.py:_add_com_distance_restraint`). Per-atom anchors NaN
-  at HMR=4 fs at any useful k; COM-distance is invariant to whole-
-  system drift and has no per-atom force singularities.
-- ✅ Apo + holo MD under the COM restraint (3×100 ns each); H2
-  directional replicates (+3.8 pp); restraint eliminates NRR
-  dissociation; sampling horizon (not restraint) isolated as
-  magnitude blocker.
-- ✅ `vampnet load_ensemble … source marsfm` loader stub ready
-  for MarS-FM (arXiv:2509.24779) checkpoint when released.
+## License & citation
 
-**v0.4:**
-- MarS-FM ensemble integration on Notch1 NRR apo + holo (once the
-  official checkpoint drops) — direct test of the magnitude question.
-  Speedup ~600× vs explicit MD; per-replica cost ~$0.05 vs ~$70.
-- Bootstrap uncertainty on H2 populations (deeptime MSM bootstrap).
-- Real AlphaFlow + BioEmu inference on Modal — `md/alphaflow_modal.py`
-  is the draft Modal app.
-- Multi-source joint VAMPNet with per-source covariance weighting +
-  stratified state-coverage report (test H3).
-- Live MCP-driven adaptive sampling on Notch1: wire the demo loop to
-  actual Modal MD launches seeded from `vampnet means` outputs.
+MIT — see `LICENSE`. If you use this bundle, please cite the underlying
+method:
 
-**Stretch (v0.5+):**
-- Gibbs energy landscape rendering inside ChimeraX
-- MACE-OFF neural-network potentials in the MD backend
-- DiffDock pose-stability teaching demo
-- Umbrella sampling on NEC-NTM distance for a μs-equivalent PMF
+- Mardt, A., Pasquali, L., Wu, H. & Noé, F. *VAMPnets for deep learning
+  of molecular kinetics.* Nat. Commun. **9**, 5 (2018).
+- Hoffmann, M. et al. *Deeptime: a Python library for machine learning
+  dynamical models from time series data.* Mach. Learn. Sci. Technol.
+  **3**, 015009 (2021).
 
-## License
-
-MIT — see `LICENSE`.
-
-## Citation
-
-If you use this bundle, please cite both the underlying VAMPnet
-method and (if applicable) deeptime:
-
-- Mardt, A., Pasquali, L., Wu, H. & Noé, F. *VAMPnets for deep learning of molecular kinetics.* Nat. Commun. **9**, 5 (2018).
-- Hoffmann, M. et al. *Deeptime: a Python library for machine learning dynamical models from time series data.* Mach. Learn. Sci. Technol. **3**, 015009 (2021).
+Each `md/*_modal.py` adapter's docstring cites the specific frontier
+model it wraps (paper, arXiv, code, checkpoint) — start there to credit
+the model authors.
