@@ -364,7 +364,29 @@ class _StubFinder:
                           else "module" if "module" in data
                           else "state_dict" if "state_dict" in data else None)
                 if sd_key:
-                    model.load_state_dict(data[sd_key], strict=False)
+                    sd = data[sd_key]
+                    # v0.10 #46 surgery: log key counts + load with strict=
+                    # False (so we can SEE the gap) then re-attempt strict
+                    # for diagnostic clarity. The strict=False load is
+                    # what the v0.9 model was running with — silently
+                    # discarding mismatched keys = likely root cause of
+                    # the IS-mode 22M kT log-weight range on ad2.
+                    ckpt_keys = set(sd.keys())
+                    model_keys = set(model.state_dict().keys())
+                    print(f"[stub.load_model] ckpt has {len(ckpt_keys)} keys, "
+                          f"model expects {len(model_keys)}")
+                    missing = sorted(model_keys - ckpt_keys)
+                    unexpected = sorted(ckpt_keys - model_keys)
+                    print(f"[stub.load_model] missing (in model, not ckpt): "
+                          f"{len(missing)}; unexpected (in ckpt, not model): "
+                          f"{len(unexpected)}")
+                    if missing:
+                        print(f"[stub.load_model] first 5 missing: {missing[:5]}")
+                    if unexpected:
+                        print(f"[stub.load_model] first 5 unexpected: {unexpected[:5]}")
+                    # Try strict=False (load whatever overlaps). Older torch
+                    # returns None instead of an IncompatibleKeys namedtuple.
+                    _ = model.load_state_dict(sd, strict=False)
                 return model
             mod.load_model = _load_model
             mod.load_checkpoint_in_subdir = lambda p: torch.load(

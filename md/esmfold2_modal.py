@@ -201,12 +201,20 @@ def _parse_chains_arg(chains: str):
 
 @app.function(gpu="A100-80GB", timeout=4 * 3600)
 def sample_remote(chain_seqs: list, name: str, n_samples: int = 200,
-                  num_loops: int = 3, num_sampling_steps: int = 50) -> bytes:
+                  num_loops: int = 3, num_sampling_steps: int = 50,
+                  seed_offset: int = 0) -> bytes:
     """Run ESMFold2 inference on one complex (list of (id, seq) chains).
 
-    Draws `n_samples` structures by varying the diffusion seed, parses
-    each to coords, and returns a packed (all-atom + CA-only) .npz as
-    bytes — shape-compatible with the boltz/marsfm loaders."""
+    Draws `n_samples` structures by varying the diffusion seed (seed=
+    seed_offset+s for s in 0..n_samples-1), parses each to coords, and
+    returns a packed (all-atom + CA-only) .npz as bytes — shape-
+    compatible with the boltz/marsfm loaders.
+
+    seed_offset enables the v0.10 W2 multi-chain fanout pattern: spawning
+    K parallel sample_remote calls with seed_offset = chain_idx *
+    n_samples gives K non-overlapping independent sample batches that
+    can be merged via md/multichain.py for R-hat / cross-chain variance
+    estimates."""
     import io
 
     import gemmi
@@ -241,7 +249,7 @@ def sample_remote(chain_seqs: list, name: str, n_samples: int = 200,
                 num_loops=num_loops,
                 num_sampling_steps=num_sampling_steps,
                 num_diffusion_samples=1,
-                seed=s,
+                seed=seed_offset + s,
             )
         # result.complex.to_mmcif() -> mmCIF text for the predicted complex.
         # Parse with gemmi (tolerant of missing _atom_site.occupancy that
@@ -331,3 +339,68 @@ def sample(sequence: str = "", chains: str = "", pdb: str = "",
     print(f"[local] wrote {out_path} ({len(data)/(1<<20):.1f} MB)")
     print(f"[local] load with: vampnet load_ensemble {name}_esmfold2 "
           f"{out_path} format esmfold2")
+
+
+@app.local_entrypoint()
+def fanout(sequence: str = "", chains: str = "", pdb: str = "",
+           chain_id: str = "", name: str = "protein",
+           n_chains: int = 4, n_samples_per_chain: int = 50,
+           num_loops: int = 3, num_sampling_steps: int = 50,
+           out: str = ""):
+    """v0.10 W2 multi-chain fanout: K parallel Modal calls, each with
+    n_samples_per_chain non-overlapping seeds, merged via md/multichain.
+
+    Each chain is an independent batch of ESMFold2 diffusion draws
+    (seed_offset = chain_idx * n_samples_per_chain), so the K chains
+    have no shared random state. The merged output has chain_idx labels
+    that md/mcmc_diagnostics.py reads to compute R-hat across chains.
+
+      modal run md/esmfold2_modal.py::fanout \\
+          --sequence "ACELPECQ..." --name notch1_NEC \\
+          --n-chains 4 --n-samples-per-chain 50
+    """
+    import io
+    import sys
+    import numpy as np
+
+    if pdb:
+        chain_seqs = _pdb_to_chain_seqs(Path(pdb).read_bytes(),
+                                        chain_id=chain_id or None)
+    elif chains:
+        chain_seqs = _parse_chains_arg(chains)
+    elif sequence:
+        chain_seqs = [("A", sequence)]
+    else:
+        raise SystemExit("provide one of --sequence, --chains, or --pdb")
+
+    print(f"[local] fanout: {n_chains} parallel chains × "
+          f"{n_samples_per_chain} samples = {n_chains * n_samples_per_chain} "
+          f"total; chains={[(c, len(s)) for c, s in chain_seqs]}")
+
+    # Spawn K chains in parallel via Modal .spawn() — fire and gather.
+    handles = []
+    for i in range(n_chains):
+        h = sample_remote.spawn(chain_seqs, f"{name}_chain{i}",
+                                 n_samples=n_samples_per_chain,
+                                 num_loops=num_loops,
+                                 num_sampling_steps=num_sampling_steps,
+                                 seed_offset=i * n_samples_per_chain)
+        handles.append(h)
+        print(f"[local] spawned chain {i}: function_call_id={h.object_id}")
+    print(f"[local] waiting on {n_chains} chains...")
+    chain_bytes = [h.get() for h in handles]
+
+    # Merge via md/multichain.py (sibling import; same dir on sys.path).
+    sys.path.insert(0, str(Path(__file__).parent))
+    from multichain import merge
+    # multichain.merge takes file paths; persist each to /tmp first.
+    tmp_paths = []
+    for i, b in enumerate(chain_bytes):
+        tp = Path(f"/tmp/{name}_chain{i}.npz")
+        tp.write_bytes(b)
+        tmp_paths.append(tp)
+    out_path = Path(out) if out else Path(f"{name}_esmfold2_{n_chains}chains.npz")
+    merge(tmp_paths, out_path=out_path)
+    print(f"[local] wrote merged {out_path} "
+          f"({out_path.stat().st_size/(1<<20):.1f} MB); "
+          f"diagnose with: .venv/bin/python md/mcmc_diagnostics.py {out_path}")
