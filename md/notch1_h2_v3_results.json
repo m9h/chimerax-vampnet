@@ -1,0 +1,93 @@
+{
+  "apo": {
+    "system": "notch1_apo_v3",
+    "n_frames_subsampled": 3000,
+    "frame_stride": 5,
+    "n_cas_nec": 174,
+    "n_cas_ntm": 60,
+    "com_sep_overall_mean_A": 4.6189165115356445,
+    "com_sep_overall_std_A": 0.316880464553833,
+    "com_sep_p_gt_20A": 0.0,
+    "com_sep_p_gt_50A": 0.0,
+    "state_populations": [
+      0.31233333333333335,
+      0.15033333333333335,
+      0.254,
+      0.2833333333333333
+    ],
+    "state_sep_mean_A": [
+      4.715781211853027,
+      4.563364505767822,
+      4.492477893829346,
+      4.654962062835693
+    ],
+    "state_sep_std_A": [
+      0.30570077896118164,
+      0.378316730260849,
+      0.2796033024787903,
+      0.2788299322128296
+    ],
+    "stationary_distribution": [
+      1.0
+    ],
+    "implied_timescales_ns": [],
+    "auto_inhibited_state": 2,
+    "activated_state": 0,
+    "P_auto_inhibited": 0.254,
+    "P_activated": 0.31233333333333335
+  },
+  "holo": {
+    "system": "notch1_holo_v3",
+    "n_frames_subsampled": 2991,
+    "frame_stride": 5,
+    "n_cas_nec": 176,
+    "n_cas_ntm": 54,
+    "com_sep_overall_mean_A": 3.699079751968384,
+    "com_sep_overall_std_A": 0.33690372109413147,
+    "com_sep_p_gt_20A": 0.0,
+    "com_sep_p_gt_50A": 0.0,
+    "state_populations": [
+      0.21598127716482782,
+      0.4476763624205951,
+      0.12604480106987628,
+      0.21029755934470076
+    ],
+    "state_sep_mean_A": [
+      3.547175168991089,
+      3.6761550903320312,
+      3.7172577381134033,
+      3.892996072769165
+    ],
+    "state_sep_std_A": [
+      0.21485692262649536,
+      0.3594285249710083,
+      0.3428449034690857,
+      0.290233850479126
+    ],
+    "stationary_distribution": [
+      1.0
+    ],
+    "implied_timescales_ns": [],
+    "auto_inhibited_state": 0,
+    "activated_state": 3,
+    "P_auto_inhibited": 0.21598127716482782,
+    "P_activated": 0.21029755934470076
+  },
+  "H2": {
+    "delta_p_autoinh": 0.038018722835172186,
+    "preregistered_met": false,
+    "directional_apo_more_autoinh": true,
+    "preregistration": {
+      "apo_P_auto_inhibited_ge": 0.5,
+      "holo_P_auto_inhibited_le": 0.3
+    }
+  },
+  "hyperparams": {
+    "n_states": 4,
+    "lag_frames": 50,
+    "epochs": 60,
+    "frame_stride": 5,
+    "n_replicas": 3,
+    "ps_per_dcd_frame": 20.0
+  }
+}
