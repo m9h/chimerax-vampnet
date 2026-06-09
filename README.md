@@ -1,6 +1,7 @@
 # 🧬 chimerax-vampnet
 
 [![version](https://img.shields.io/badge/version-v0.10-1f6feb)](CITATION.cff)
+[![docs](https://img.shields.io/badge/docs-live-2ea043)](http://center17.org/chimerax-vampnet/)
 [![license](https://img.shields.io/badge/license-MIT-3fb950)](LICENSE)
 [![UCSF ChimeraX](https://img.shields.io/badge/UCSF-ChimeraX-f6862d)](https://www.cgl.ucsf.edu/chimerax/)
 [![python](https://img.shields.io/badge/python-3.9%E2%80%933.12-3776ab)](pyproject.toml)

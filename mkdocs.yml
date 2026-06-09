@@ -2,7 +2,7 @@ site_name: chimerax-vampnet
 site_description: >-
   A teaching resource for learning protein structure and dynamics by driving
   frontier biomolecular models — built for the Biopunk Lab HTGAA course.
-site_url: https://m9h.github.io/chimerax-vampnet/
+site_url: http://center17.org/chimerax-vampnet/
 repo_url: https://github.com/m9h/chimerax-vampnet
 repo_name: m9h/chimerax-vampnet
 edit_uri: edit/main/docs/
