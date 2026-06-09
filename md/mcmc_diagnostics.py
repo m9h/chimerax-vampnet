@@ -214,6 +214,13 @@ def summarize(idata, npz_dict: dict[str, np.ndarray]) -> dict[str, Any]:
         out["accept_rate"] = float(npz_dict["accept_rate"])
     if "elapsed_seconds" in npz_dict:
         out["elapsed_seconds"] = float(npz_dict["elapsed_seconds"])
+    # IS-mode adapter outputs (md/timewarp_modal.py IS branch and any
+    # future flow-based IS sampler) carry extra weight diagnostics.
+    if "method" in npz_dict:
+        out["method"] = str(npz_dict["method"])
+    for k in ("ess_is", "log_evidence", "temperature_K"):
+        if k in npz_dict:
+            out[k] = float(npz_dict[k])
     if "plddt" in npz_dict:
         plddt = np.asarray(npz_dict["plddt"]).astype(float)
         plddt = plddt[~np.isnan(plddt)]
@@ -240,16 +247,31 @@ def flag_pathologies(summary: dict[str, Any],
 
     if "accept_rate" in summary:
         a = summary["accept_rate"]
-        if a < accept_lo:
-            warns.append(
-                f"FAIL accept_rate={a:.3f} < {accept_lo}; chain is stuck "
-                f"(consider IS-rescue mode or longer num_proposal_steps)"
-            )
-        elif a > accept_hi:
-            warns.append(
-                f"WARN accept_rate={a:.3f} > {accept_hi}; proposals are too "
-                f"local (consider higher num_proposal_steps for better mixing)"
-            )
+        method = summary.get("method", "mh")
+        if method == "is":
+            # accept_rate for IS-mode outputs is ESS_IS / N; the fix is
+            # different (flow-vs-Boltzmann mismatch, not chain mixing).
+            if a < accept_lo:
+                warns.append(
+                    f"FAIL ESS_IS/N={a:.3f} < {accept_lo}; IS weights "
+                    f"are pathologically skewed — flow proposals don't "
+                    f"match Boltzmann target. Likely causes: units bug "
+                    f"(coords scale mismatch), wrong topology/force "
+                    f"field, or model weights not loaded correctly."
+                )
+        else:  # mh (or unspecified, treat as mh)
+            if a < accept_lo:
+                warns.append(
+                    f"FAIL accept_rate={a:.3f} < {accept_lo}; MH chain is "
+                    f"stuck (try method='is' for diagnostic clarity, or "
+                    f"longer num_proposal_steps if proposals are merely "
+                    f"too narrow)"
+                )
+            elif a > accept_hi:
+                warns.append(
+                    f"WARN accept_rate={a:.3f} > {accept_hi}; proposals "
+                    f"are too local (consider higher num_proposal_steps)"
+                )
 
     if "distinct_fraction" in summary and summary["distinct_fraction"] < distinct_frac_min:
         warns.append(
@@ -318,9 +340,15 @@ def format_report(summary: dict[str, Any], warns: list[str]) -> str:
     lines.append(f"chains: {summary['n_chains']}    "
                  f"draws/chain: {summary['n_draws']}    "
                  f"total: {summary['n_total']}")
-    for k in ("accept_rate", "distinct_fraction", "plddt_mean", "elapsed_seconds"):
+    for k in ("method", "accept_rate", "distinct_fraction",
+              "ess_is", "log_evidence", "temperature_K",
+              "plddt_mean", "elapsed_seconds"):
         if k in summary:
-            lines.append(f"{k:>20s}: {summary[k]:.4g}")
+            v = summary[k]
+            if isinstance(v, str):
+                lines.append(f"{k:>20s}: {v}")
+            else:
+                lines.append(f"{k:>20s}: {v:.4g}")
     lines.append("")
     lines.append(f"{'observable':>16s}  {'mean':>10s} {'std':>10s} "
                  f"{'ess':>8s} {'rhat':>6s} {'mcse':>10s} {'τ_int':>8s}")

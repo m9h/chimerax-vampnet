@@ -219,11 +219,26 @@ def smoke():
               secrets=[HF_SECRET])
 def sample_remote(protein: str = "ad2", n_samples: int = 200,
                    n_proposal_steps: int = 100,
-                   model_size: str = "2aa") -> bytes:
-    """Rev 9: HF-download checkpoint + AD-3 data, run MH sampling via the
-    timewarp internal API (load_model + sample_from_trajectory), pack
-    coords into the project npz schema.
+                   model_size: str = "2aa",
+                   method: str = "mh",
+                   temperature_K: float = 300.0) -> bytes:
+    """HF-download checkpoint + AD-3 data, sample with the chosen method,
+    pack coords (+ method-specific diagnostics) into the project npz schema.
 
+    method:
+      "mh" — Metropolis-Hastings MCMC with the flow as proposal + OpenMM
+             Boltzmann acceptance. Asymptotically unbiased; can stall if
+             proposals are systematically rejected (the v0.9 0-accept
+             issue on ad2). num_proposal_steps controls parallel proposals
+             per saved sample.
+      "is" — Importance sampling rescue: draw N independent flow samples
+             with log-density log_q, compute Boltzmann log_p via OpenMM,
+             output coords + per-sample weights w_i = exp(log_p - log_q -
+             log_Z) and ESS_IS = 1 / Σ(w_i²). Biased but free samples;
+             ESS_IS surfaces flow-vs-Boltzmann mismatch as a *number*
+             instead of a stuck chain. n_proposal_steps is ignored.
+    temperature_K is used for both MH (Boltzmann factor in acceptance)
+    and IS (kT scale of log_p).
     model_size: "2aa" (alanine dipeptide, 426 MB checkpoint) or
                 "4aa" (tetrapeptides, 4.76 GB).
     """
@@ -270,6 +285,8 @@ def sample_remote(protein: str = "ad2", n_samples: int = 200,
             "--protein", protein,
             "--num-samples", str(n_samples),
             "--num-proposal-steps", str(n_proposal_steps),
+            "--method", method,
+            "--temperature-K", str(temperature_K),
             "--out-npz", str(out_npz)]
     print(f"[timewarp] {' '.join(cmd)}")
     sys.stdout.flush()
@@ -399,6 +416,8 @@ def main():
     ap.add_argument("--protein", required=True)
     ap.add_argument("--num-samples", type=int, default=200)
     ap.add_argument("--num-proposal-steps", type=int, default=100)
+    ap.add_argument("--method", choices=["mh", "is"], default="mh")
+    ap.add_argument("--temperature-K", type=float, default=300.0)
     ap.add_argument("--out-npz", required=True)
     args = ap.parse_args()
 
@@ -465,29 +484,115 @@ def main():
     ).to(device)
     print(f"[script] openmm energy + {num_atoms} masses ready", flush=True)
 
-    print(f"[script] running MH: {args.num_samples} samples × "
-          f"{args.num_proposal_steps} proposals/iter", flush=True)
-    t0 = time.time()
-    with torch.no_grad():
-        sampled_coords, _, _, chain_stats = sample_with_model(
-            batch, model, device,
-            openmm_potential_energy_torch, masses,
-            args.num_samples,
-            True,  # mh
-            random_velocs=False, resample_velocs=False,
-            initialize_randomly=False, sim=None,
-            openmm_on_current=False, openmm_on_proposal=False,
-            num_openmm_steps=0,
-            num_proposal_steps=args.num_proposal_steps,
-            adaptive_parallelism=False,
-        )
-    elapsed = time.time() - t0
-    print(f"[script] sampling done in {elapsed:.1f} s", flush=True)
+    # Branch on sampling method. Both paths end with a `coords` tensor,
+    # an `accept`-or-equivalent scalar, `elapsed` seconds, and a per-mode
+    # extra-fields dict to save into the npz.
+    extra_fields = {"method": np.array(args.method),
+                    "temperature_K": np.array(args.temperature_K, dtype=np.float32)}
 
-    coords = np.asarray(sampled_coords, dtype=np.float32)
-    accept = float(np.mean(np.asarray(chain_stats.acceptance)))
-    print(f"[script] coords shape {coords.shape}, accept_rate {accept:.3f}",
-          flush=True)
+    if args.method == "mh":
+        print(f"[script] running MH: {args.num_samples} samples × "
+              f"{args.num_proposal_steps} proposals/iter", flush=True)
+        t0 = time.time()
+        with torch.no_grad():
+            sampled_coords, _, _, chain_stats = sample_with_model(
+                batch, model, device,
+                openmm_potential_energy_torch, masses,
+                args.num_samples,
+                True,  # mh
+                random_velocs=False, resample_velocs=False,
+                initialize_randomly=False, sim=None,
+                openmm_on_current=False, openmm_on_proposal=False,
+                num_openmm_steps=0,
+                num_proposal_steps=args.num_proposal_steps,
+                adaptive_parallelism=False,
+            )
+        elapsed = time.time() - t0
+        coords = np.asarray(sampled_coords, dtype=np.float32)
+        accept = float(np.mean(np.asarray(chain_stats.acceptance)))
+        print(f"[script] MH done in {elapsed:.1f} s: coords {coords.shape}, "
+              f"accept_rate {accept:.3f}", flush=True)
+
+    else:  # method == "is"
+        print(f"[script] running IS: {args.num_samples} flow draws + "
+              f"OpenMM reweighting at T={args.temperature_K} K", flush=True)
+        # kT in kJ/mol (OpenMM energy units): R = 8.314e-3 kJ/(mol·K)
+        kT_kjmol = 8.314e-3 * args.temperature_K
+        t0 = time.time()
+        with torch.no_grad():
+            # Flow draws + log-density. The flow-density-model API expects
+            # the batch fields unpacked as 6 positional tensors + num_samples:
+            #   conditional_sample_with_logp(atom_types, x_coords, x_velocs,
+            #     adj_list, edge_batch_idx, masked_elements, num_samples)
+            # Returns (y_coords, y_velocs, log_q).
+            coords_t, _velocs_t, log_q = model.conditional_sample_with_logp(
+                batch.atom_types,
+                batch.atom_coords,
+                batch.atom_velocs,
+                batch.adj_list,
+                batch.edge_batch_idx,
+                batch.masked_elements,
+                args.num_samples,
+            )
+            print(f"[script] raw IS shapes: coords_t={tuple(coords_t.shape)}, "
+                  f"log_q={tuple(log_q.shape)}", flush=True)
+            # Defensive reshape — the model can return (N, A, 3),
+            # (1, N, A, 3), (N, 1, A, 3), etc. depending on internal
+            # batching. Re-shape from total element count, requiring
+            # the result to be (num_samples, num_atoms, 3).
+            n = args.num_samples
+            total = coords_t.numel()
+            if total % (n * 3) != 0:
+                raise RuntimeError(
+                    f"coords_t total elements {total} not divisible by "
+                    f"num_samples ({n}) * 3; shape={tuple(coords_t.shape)}. "
+                    f"The model may have ignored num_samples — needs a "
+                    f"manual loop instead.")
+            n_atoms = total // (n * 3)
+            coords_t = coords_t.reshape(n, n_atoms, 3)
+            log_q = log_q.reshape(-1)
+            if log_q.numel() != n:
+                print(f"[script] WARN log_q has {log_q.numel()} elements, "
+                      f"expected {n}; reshaping anyway", flush=True)
+        elapsed_sample = time.time() - t0
+        print(f"[script] IS unpacked: coords_t={tuple(coords_t.shape)}, "
+              f"log_q={tuple(log_q.shape)}", flush=True)
+
+        with torch.no_grad():
+            # OpenMM potential energy at each drawn sample. Returns kJ/mol per frame.
+            energies = openmm_potential_energy_torch(coords_t).reshape(-1)
+            log_p = -energies / kT_kjmol  # (N,) Boltzmann log-density up to const
+        elapsed_energy = time.time() - t0 - elapsed_sample
+        elapsed = elapsed_sample + elapsed_energy
+
+        # IS weights: w_i ∝ exp(log_p - log_q). Log-sum-exp normalization.
+        log_w = (log_p - log_q).detach().cpu().numpy().astype(np.float64)
+        log_w_max = float(np.max(log_w))
+        w_unnorm = np.exp(log_w - log_w_max)
+        w_sum = float(w_unnorm.sum())
+        w = w_unnorm / w_sum   # normalized to sum to 1
+        ess_is = float(1.0 / (w ** 2).sum())
+        # Log-evidence proxy (relative to flow): log(E_q[p/q]) ≈
+        # logsumexp(log_w) - log(N)  (unbiased on the flow's draws).
+        log_evidence = log_w_max + float(np.log(w_sum)) - float(np.log(args.num_samples))
+
+        coords = coords_t.detach().cpu().numpy().astype(np.float32)
+        # `accept` for backward-compatible diagnostics: store the ESS
+        # fraction so mcmc_diagnostics.py's accept-rate flag still
+        # surfaces a stuck IS run (low ESS -> tiny "effective acceptance").
+        accept = ess_is / args.num_samples
+
+        extra_fields.update({
+            "log_weights":   log_w.astype(np.float32),
+            "weights":       w.astype(np.float32),
+            "ess_is":        np.array(ess_is, dtype=np.float32),
+            "log_evidence":  np.array(log_evidence, dtype=np.float32),
+        })
+        print(f"[script] IS done in {elapsed:.1f} s "
+              f"(sample {elapsed_sample:.1f}s + energy {elapsed_energy:.1f}s): "
+              f"coords {coords.shape}, ESS={ess_is:.2f}/{args.num_samples} "
+              f"({100*accept:.1f}%), log_evidence={log_evidence:.3f}",
+              flush=True)
 
     # CA mask via topology — for ala-dipeptide there are 22 atoms with
     # CA at index 8 (ACE-ALA-NME canonical ordering). For safety, take
@@ -513,6 +618,7 @@ def main():
         iptm=np.full(coords.shape[0], np.nan, dtype=np.float32),
         accept_rate=np.array(accept, dtype=np.float32),
         elapsed_seconds=np.array(elapsed, dtype=np.float32),
+        **extra_fields,
     )
     print(f"[script] wrote {args.out_npz}", flush=True)
 
@@ -525,14 +631,19 @@ if __name__ == "__main__":
 @app.local_entrypoint()
 def sample(protein: str = "ad2", n_samples: int = 200,
            n_proposal_steps: int = 100, model_size: str = "2aa",
+           method: str = "mh", temperature: float = 300.0,
            out: str = ""):
-    """Run Timewarp MH sampling via the internal API (no figure-only
-    evaluate.py shell-out). Pulls the HF checkpoint + AD-3 data on first
-    invocation; cached on the Modal volume thereafter."""
+    """Run Timewarp sampling. method="mh" (default, asymptotically unbiased
+    MCMC) or "is" (importance-sampling rescue; biased but free samples +
+    ESS_IS diagnostic instead of stuck chains)."""
     print(f"[local] timewarp sample: {protein} ({model_size}), "
-          f"{n_samples} samples × {n_proposal_steps} proposals")
+          f"method={method}, {n_samples} samples"
+          + (f" × {n_proposal_steps} proposals" if method == "mh" else "")
+          + f", T={temperature} K")
     data = sample_remote.remote(protein, n_samples, n_proposal_steps,
-                                 model_size=model_size)
-    out_path = Path(out) if out else Path(f"{protein}_timewarp.npz")
+                                 model_size=model_size, method=method,
+                                 temperature_K=temperature)
+    suffix = f"_timewarp_{method}.npz" if method != "mh" else "_timewarp.npz"
+    out_path = Path(out) if out else Path(f"{protein}{suffix}")
     out_path.write_bytes(data)
     print(f"[local] wrote {out_path} ({len(data)/(1<<20):.1f} MB)")
