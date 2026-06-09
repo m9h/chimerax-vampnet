@@ -125,6 +125,23 @@ SYSTEMS = {
             "ESMFold2":  "hsp90_ntd_esmfold2200.npz",
         },
     },
+    "b2ar_2rh1": {
+        # v0.8 W3: β2AR 2RH1 inactive (282 residues, 7TM GPCR). No MD
+        # reference yet — membrane MD prep NaN'd at NVT (v0.8 W1 deferred).
+        # The MD-less generative-only analysis still tests the cross-
+        # sampler H3 finding on a third fold class (Class A GPCR).
+        "md_loader": lambda: (_ for _ in ()).throw(
+            FileNotFoundError("β2AR membrane MD deferred — see v0.8 W1")),
+        "md_ca_range": slice(None),
+        "expected_n_ca": 282,
+        "source_npz": {
+            "MarS-FM":   "b2ar_2rh1_marsfm200.npz",
+            "BioEmu":    "b2ar_2rh1_bioemu200.npz",
+            "Boltz-2":   "b2ar_2rh1_boltz200.npz",
+            "AlphaFlow": "b2ar_2rh1_af200.npz",
+            "ESMFold2":  "b2ar_2rh1_esmfold2200.npz",
+        },
+    },
 }
 
 

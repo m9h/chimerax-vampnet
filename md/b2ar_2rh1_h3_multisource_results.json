@@ -1,0 +1,65 @@
+{
+  "system": "b2ar_2rh1",
+  "sources_loaded": [
+    "MarS-FM",
+    "BioEmu",
+    "Boltz-2",
+    "AlphaFlow",
+    "ESMFold2"
+  ],
+  "n_frames_per_source": {
+    "MarS-FM": 200,
+    "BioEmu": 195,
+    "Boltz-2": 200,
+    "AlphaFlow": 200,
+    "ESMFold2": 200
+  },
+  "n_states": 4,
+  "lag": 20,
+  "state_breakdown": [
+    {
+      "state": 0,
+      "population_pct": 6.532663316582915,
+      "frac_of_src_in_state": {
+        "MarS-FM": 32.5,
+        "BioEmu": 0.0,
+        "Boltz-2": 0.0,
+        "AlphaFlow": 0.0,
+        "ESMFold2": 0.0
+      }
+    },
+    {
+      "state": 1,
+      "population_pct": 7.135678391959798,
+      "frac_of_src_in_state": {
+        "MarS-FM": 35.5,
+        "BioEmu": 0.0,
+        "Boltz-2": 0.0,
+        "AlphaFlow": 0.0,
+        "ESMFold2": 0.0
+      }
+    },
+    {
+      "state": 2,
+      "population_pct": 6.432160804020101,
+      "frac_of_src_in_state": {
+        "MarS-FM": 32.0,
+        "BioEmu": 0.0,
+        "Boltz-2": 0.0,
+        "AlphaFlow": 0.0,
+        "ESMFold2": 0.0
+      }
+    },
+    {
+      "state": 3,
+      "population_pct": 79.89949748743719,
+      "frac_of_src_in_state": {
+        "MarS-FM": 0.0,
+        "BioEmu": 100.0,
+        "Boltz-2": 100.0,
+        "AlphaFlow": 100.0,
+        "ESMFold2": 100.0
+      }
+    }
+  ]
+}
