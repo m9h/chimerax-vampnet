@@ -9,7 +9,7 @@
 [![runs on Modal](https://img.shields.io/badge/runs%20on-Modal-7c3aed)](https://modal.com/)
 [![method](https://img.shields.io/badge/method-VAMPnet%20%2B%20MSM-08979c)](https://deeptime-ml.github.io/)
 ![built for](https://img.shields.io/badge/built%20for-HTGAA%20%C2%B7%20Biopunk%20Lab-db61a2)
-[![sister project](https://img.shields.io/badge/sister%20project-chimerax--origami-58a6ff)](../dna-origami)
+[![sister project](https://img.shields.io/badge/sister%20project-chimerax--origami-58a6ff)](https://github.com/m9h/chimerax-origami)
 
 **A teaching resource for learning protein structure and dynamics by
 driving frontier biomolecular models — built for the Biopunk Lab
