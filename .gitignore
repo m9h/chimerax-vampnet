@@ -17,10 +17,14 @@ dist/
 # Bundle build outputs
 src/version.py
 
-# MD data — too large for git, lives on /data
+# MD data / generated ensembles — too large for git, live on /data.
+# Unanchored on purpose: `modal run md/<adapter>.py --out foo.npz` drops
+# ensembles into the repo root, which the old md/-only rules missed.
+*.npz
+*.dcd
+*.xtc
+*.chk
 md/*.pdb
-md/*.dcd
-md/*.npz
 
 # Docker container runtime cache (CUDA shader cache etc)
 md/.containerhome/
