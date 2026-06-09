@@ -341,6 +341,38 @@ def sample(sequence: str = "", chains: str = "", pdb: str = "",
           f"{out_path} format esmfold2")
 
 
+@app.function(timeout=600)
+def merge_remote(chain_bytes_list: list) -> bytes:
+    """Merge K per-chain ESMFold2 npz blobs into a single chain_idx-labeled
+    npz. Runs inside the Modal image (numpy available) since the local
+    entrypoint Python is the uv-installed modal one and may lack numpy."""
+    import io
+    import numpy as np
+
+    chain_dicts = [
+        {k: np.load(io.BytesIO(b), allow_pickle=True)[k]
+         for k in np.load(io.BytesIO(b), allow_pickle=True).files}
+        for b in chain_bytes_list
+    ]
+    sample_axis_keys = {"coords", "coords_ca", "plddt", "iptm"}
+    out = {}
+    chain_lens = [cd["coords_ca"].shape[0] for cd in chain_dicts]
+    out["chain_idx"] = np.concatenate(
+        [np.full(n, i, dtype=np.int64) for i, n in enumerate(chain_lens)]
+    )
+    for k in chain_dicts[0]:
+        if k in sample_axis_keys:
+            out[k] = np.concatenate([cd[k] for cd in chain_dicts], axis=0)
+        else:
+            out[k] = chain_dicts[0][k]
+    buf = io.BytesIO()
+    np.savez_compressed(buf, **out)
+    print(f"[merge_remote] merged {len(chain_dicts)} chains; "
+          f"per-chain sizes: {chain_lens}; "
+          f"total samples: {sum(chain_lens)}")
+    return buf.getvalue()
+
+
 @app.local_entrypoint()
 def fanout(sequence: str = "", chains: str = "", pdb: str = "",
            chain_id: str = "", name: str = "protein",
@@ -348,7 +380,7 @@ def fanout(sequence: str = "", chains: str = "", pdb: str = "",
            num_loops: int = 3, num_sampling_steps: int = 50,
            out: str = ""):
     """v0.10 W2 multi-chain fanout: K parallel Modal calls, each with
-    n_samples_per_chain non-overlapping seeds, merged via md/multichain.
+    n_samples_per_chain non-overlapping seeds, merged remotely.
 
     Each chain is an independent batch of ESMFold2 diffusion draws
     (seed_offset = chain_idx * n_samples_per_chain), so the K chains
@@ -358,11 +390,11 @@ def fanout(sequence: str = "", chains: str = "", pdb: str = "",
       modal run md/esmfold2_modal.py::fanout \\
           --sequence "ACELPECQ..." --name notch1_NEC \\
           --n-chains 4 --n-samples-per-chain 50
-    """
-    import io
-    import sys
-    import numpy as np
 
+    Note: merge happens via merge_remote (in the Modal image) — the
+    local entrypoint Python is the uv-installed modal one and may
+    lack numpy.
+    """
     if pdb:
         chain_seqs = _pdb_to_chain_seqs(Path(pdb).read_bytes(),
                                         chain_id=chain_id or None)
@@ -390,17 +422,11 @@ def fanout(sequence: str = "", chains: str = "", pdb: str = "",
     print(f"[local] waiting on {n_chains} chains...")
     chain_bytes = [h.get() for h in handles]
 
-    # Merge via md/multichain.py (sibling import; same dir on sys.path).
-    sys.path.insert(0, str(Path(__file__).parent))
-    from multichain import merge
-    # multichain.merge takes file paths; persist each to /tmp first.
-    tmp_paths = []
-    for i, b in enumerate(chain_bytes):
-        tp = Path(f"/tmp/{name}_chain{i}.npz")
-        tp.write_bytes(b)
-        tmp_paths.append(tp)
+    # Merge in-cluster (numpy lives in the Modal image, not in local
+    # modal-bin Python).
+    merged = merge_remote.remote(chain_bytes)
     out_path = Path(out) if out else Path(f"{name}_esmfold2_{n_chains}chains.npz")
-    merge(tmp_paths, out_path=out_path)
+    out_path.write_bytes(merged)
     print(f"[local] wrote merged {out_path} "
           f"({out_path.stat().st_size/(1<<20):.1f} MB); "
           f"diagnose with: .venv/bin/python md/mcmc_diagnostics.py {out_path}")
