@@ -312,8 +312,9 @@ def flag_pathologies(summary: dict[str, Any],
 
 def _integrated_autocorr(x: np.ndarray) -> float:
     """FFT-based integrated autocorrelation time; truncated at first
-    negative lag. Mirrors md/timewarp_modal.py:_integrated_autocorr for
-    consistency across the project."""
+    negative lag. Canonical home for the project's autocorr helper —
+    centralized here in v0.10 (was previously duplicated in
+    md/timewarp_modal.py)."""
     x = np.asarray(x, dtype=float)
     x = x[~np.isnan(x)]
     x = x - x.mean()

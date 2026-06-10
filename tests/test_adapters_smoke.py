@@ -96,39 +96,41 @@ def test_uma_ca_indices_ignore_hetatm():
     assert uma_modal._ca_indices_from_pdb(pdb) == [0]
 
 
-# ------------------------------------------------- timewarp_modal pure helper
+# ----------------------------------------- mcmc_diagnostics autocorr helper
+# (this helper was centralized into md/mcmc_diagnostics.py in v0.10; it used
+#  to live in md/timewarp_modal.py — test it where it now lives.)
 
-def test_timewarp_autocorr_short_series():
-    import timewarp_modal
-    assert timewarp_modal._integrated_autocorr([1.0, 2.0]) == 1.0
-
-
-def test_timewarp_autocorr_constant_series_is_one():
-    import timewarp_modal
-    assert timewarp_modal._integrated_autocorr([5.0] * 50) == pytest.approx(1.0)
+def test_mcmc_autocorr_short_series():
+    import mcmc_diagnostics
+    assert mcmc_diagnostics._integrated_autocorr([1.0, 2.0]) == 1.0
 
 
-def test_timewarp_autocorr_lower_bound_invariant():
+def test_mcmc_autocorr_constant_series_is_one():
+    import mcmc_diagnostics
+    assert mcmc_diagnostics._integrated_autocorr([5.0] * 50) == pytest.approx(1.0)
+
+
+def test_mcmc_autocorr_lower_bound_invariant():
     import numpy as np
-    import timewarp_modal
+    import mcmc_diagnostics
     # acf is truncated at the first negative lag, so the summed terms are
     # non-negative -> tau >= 1.0 for any series.
     rng = np.random.RandomState(0)
-    tau = timewarp_modal._integrated_autocorr(rng.randn(500))
+    tau = mcmc_diagnostics._integrated_autocorr(rng.randn(500))
     assert tau >= 1.0
     assert tau < 5.0  # white noise -> small integrated autocorr time
 
 
-def test_timewarp_autocorr_correlated_exceeds_white_noise():
+def test_mcmc_autocorr_correlated_exceeds_white_noise():
     import numpy as np
-    import timewarp_modal
+    import mcmc_diagnostics
     rng = np.random.RandomState(1)
     white = rng.randn(2000)
     # AR(1) with phi=0.9 -> strongly autocorrelated -> larger tau.
     ar = np.zeros(2000)
     for i in range(1, 2000):
         ar[i] = 0.9 * ar[i - 1] + white[i]
-    tau_white = timewarp_modal._integrated_autocorr(white)
-    tau_ar = timewarp_modal._integrated_autocorr(ar)
+    tau_white = mcmc_diagnostics._integrated_autocorr(white)
+    tau_ar = mcmc_diagnostics._integrated_autocorr(ar)
     assert tau_ar > tau_white
     assert tau_ar > 3.0
