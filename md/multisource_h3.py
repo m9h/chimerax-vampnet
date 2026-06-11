@@ -84,6 +84,24 @@ def _load_hsp90_ntd_apo_v1_md():
     return np.concatenate(cas, axis=0)
 
 
+def _load_b2ar_2rh1_md():
+    """β2AR MD reference from a GPCRmd download (https://www.gpcrmd.org),
+    converted to CA coords by md/gpcrmd_to_npz.py. Expects
+    `b2ar_2rh1_gpcrmd_md.npz` in the repo root (key 'coords_ca', Å)."""
+    p = ROOT / "b2ar_2rh1_gpcrmd_md.npz"
+    if not p.exists():
+        raise FileNotFoundError(
+            f"β2AR MD not on disk at {p}. Download a β2AR simulation from "
+            "GPCRmd (free login required; search 2RH1 / ADRB2 / P07550), then:\n"
+            "  python md/gpcrmd_to_npz.py --top <sim>.pdb --traj <sim>.xtc "
+            f"--out {p.name}\n"
+            "(the converter reports n_ca; it must equal 282 to match the "
+            "β2AR generative sources — refine its --sel if it doesn't).")
+    d = np.load(p, allow_pickle=True)
+    key = "coords_ca" if "coords_ca" in d.files else d.files[0]
+    return d[key].astype(np.float32)
+
+
 SYSTEMS = {
     "notch1_apo_v3": {
         "md_loader": _load_notch1_apo_v3_md,
@@ -126,12 +144,14 @@ SYSTEMS = {
         },
     },
     "b2ar_2rh1": {
-        # v0.8 W3: β2AR 2RH1 inactive (282 residues, 7TM GPCR). No MD
-        # reference yet — membrane MD prep NaN'd at NVT (v0.8 W1 deferred).
-        # The MD-less generative-only analysis still tests the cross-
-        # sampler H3 finding on a third fold class (Class A GPCR).
-        "md_loader": lambda: (_ for _ in ()).throw(
-            FileNotFoundError("β2AR membrane MD deferred — see v0.8 W1")),
+        # v0.8 W3: β2AR 2RH1 inactive (282 residues, 7TM GPCR). MD source
+        # is a GPCRmd-downloaded simulation converted by md/gpcrmd_to_npz.py
+        # (our own membrane MD prep NaN'd at NVT — v0.8 W1 deferred — so we
+        # use published GPCRmd MD instead). Until the file is on disk the
+        # loader raises with download+convert instructions; the MD-less
+        # generative-only analysis still runs (the loader is wrapped in
+        # try/except downstream).
+        "md_loader": _load_b2ar_2rh1_md,
         "md_ca_range": slice(None),
         "expected_n_ca": 282,
         "source_npz": {
