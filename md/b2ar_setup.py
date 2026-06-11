@@ -1,17 +1,29 @@
 """β2AR membrane MD setup for v0.8 W1.
 
-Pre-processes the two β2AR PDBs (2RH1 inactive + 3P0G active-like)
-into clean MD-ready inputs by stripping crystallization scaffolds:
+Seeds from **OPM (Orientations of Proteins in Membranes)** coordinates,
+not raw RCSB. This is the fix for the v0.8 W1 NaN-at-NVT: OpenMM's
+`Modeller.addMembrane` *requires* the protein pre-oriented with the
+membrane normal along z and centered on the bilayer. Raw RCSB structures
+are in the crystal frame, so addMembrane inserts the POPC bilayer in the
+wrong plane, the lipids clash through the 7TM bundle, and the system NaNs
+at the first NVT step. OPM serves the same structures rotated into the
+membrane frame (membrane core z≈[-15,15], centered at 0) plus DUM
+boundary-marker atoms — exactly what addMembrane needs.
 
-- **2RH1**: drop BRIL/T4L lysozyme fusion at residues 1002-1161
-  (replaces ICL3 in the crystal). PDBFixer's findMissingResidues
-  picks up the resulting ~32-residue ICL3 gap and re-models it as
-  a coil; this is acceptable for MD because ICL3 is intrinsically
-  flexible in solution. Also drop one stray residue 415 (a
-  crystallization additive labeled as a residue in the PDB).
-- **3P0G**: drop chain B (Nb80 nanobody, 121 residues) and the
-  P0G agonist (PDBFixer removeHeterogens handles the agonist; we
-  drop chain B explicitly here before sending to PDBFixer).
+Pre-processes the two β2AR structures into clean, membrane-oriented,
+MD-ready inputs by stripping non-receptor atoms (note OPM re-letters
+chains, so the receptor chain differs per structure):
+
+- **2RH1** (OPM chain **C**, the first of two identical copies): keep
+  receptor residues 29-230 + 263-342 (= the 282-CA span that matches the
+  β2AR generative sources). Drops the T4L fusion (1002-1161, replaces
+  ICL3 — PDBFixer re-models the resulting flexible ICL3 gap as coil), the
+  duplicate copy (chain D), the DUM markers, and crystallization
+  additives. ICL3 is intrinsically flexible in solution, so coil
+  re-modeling is acceptable for MD.
+- **3P0G** (OPM chain **A**, the receptor): keep chain-A standard
+  residues only — drops chain B (Nb80 nanobody), the P0G agonist, DUM
+  markers, and additives.
 
 Then drives both through `modal_md::prep --membrane` and the
 fanout to produce 3 × 300 ns MD per system.
@@ -24,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import urllib.request
 from pathlib import Path
 
 import mdtraj as md
@@ -33,44 +46,78 @@ RAW = Path("/tmp/b2ar_pdbs")
 CLEAN = Path("/tmp/b2ar_clean")
 CLEAN.mkdir(parents=True, exist_ok=True)
 
+OPM_BASE = "https://opm-assets.storage.googleapis.com/pdb"
+
+# Standard amino-acid residue names (+ common protonation/disulfide
+# variants). Filtering to these drops OPM DUM markers, ligands, and
+# crystallization additives while preserving the (oriented) receptor.
+STD_AA = set(
+    "ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER "
+    "THR TRP TYR VAL HID HIE HIP CYX".split())
+
+
+def _fetch_opm(pdbid: str) -> Path:
+    """Download OPM membrane-oriented coordinates for `pdbid` into RAW.
+    OPM rotates the structure so the membrane normal is z and the bilayer
+    is centered at z=0 — the orientation Modeller.addMembrane assumes.
+    Cached on disk after the first fetch."""
+    RAW.mkdir(parents=True, exist_ok=True)
+    out = RAW / f"{pdbid}_opm.pdb"
+    if out.exists() and out.stat().st_size > 10000:
+        return out
+    url = f"{OPM_BASE}/{pdbid}.pdb"
+    print(f"[opm] fetching membrane-oriented {pdbid} <- {url}")
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "chimerax-vampnet/0.10"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        data = r.read()
+    out.write_bytes(data)
+    print(f"[opm]   wrote {out} ({len(data) // 1024} KB)")
+    return out
+
 
 def _strip_2rh1():
-    """Drop BRIL fusion (1002-1161) + stray 415 + non-protein."""
+    """OPM-oriented 2RH1 -> receptor only (chain C). Keeps residues
+    29-230 + 263-342 (the 282-CA span matching the β2AR generative
+    sources); drops the T4L fusion (1002-1161), the duplicate copy
+    (chain D), DUM markers, and additives."""
     print("=== 2RH1 (inactive) ===")
-    t = md.load(str(RAW / "2rh1.pdb"))
-    # Keep only β2AR backbone residues 29-230 and 263-342 on chain A.
+    t = md.load(str(_fetch_opm("2rh1")))
     keep_indices = []
     for atom in t.topology.atoms:
         c = atom.residue.chain.chain_id
         r = atom.residue.resSeq
-        # Keep β2AR residues on chain A, drop BRIL (1000s) + stray.
-        if c == "A" and ((29 <= r <= 230) or (263 <= r <= 342)):
+        # OPM re-letters the receptor to chain C; STD_AA drops DUM +
+        # additives; the ranges drop the T4L-occupied ICL3 region.
+        if c == "C" and atom.residue.name in STD_AA \
+                and ((29 <= r <= 230) or (263 <= r <= 342)):
             keep_indices.append(atom.index)
     sub = t.atom_slice(keep_indices)
     out = CLEAN / "2rh1_clean.pdb"
     sub.save_pdb(str(out))
     print(f"  wrote {out}: {sub.n_atoms} atoms, {sub.n_residues} residues "
-          f"(BRIL + stray + non-protein dropped)")
+          f"(membrane-oriented; T4L + dup chain + DUM dropped)")
     return out
 
 
 def _strip_3p0g():
-    """Drop chain B (Nb80 nanobody) + P0G agonist."""
+    """OPM-oriented 3P0G -> receptor only (chain A). Drops chain B
+    (Nb80 nanobody), the P0G agonist, DUM markers, and additives."""
     print("=== 3P0G (active-like) ===")
-    t = md.load(str(RAW / "3p0g.pdb"))
-    # Keep only chain A protein residues (PDBFixer.removeHeterogens
-    # will strip P0G later).
+    t = md.load(str(_fetch_opm("3p0g")))
     keep_indices = []
     for atom in t.topology.atoms:
-        c = atom.residue.chain.chain_id
-        rname = atom.residue.name
-        if c == "A" and rname not in {"P0G", "HOH", "WAT"}:
+        # OPM keeps the receptor on chain A; Nb80 is on chain B (excluded
+        # by the chain test), and STD_AA drops the P0G agonist, DUM
+        # markers, and crystallization additives.
+        if atom.residue.chain.chain_id == "A" \
+                and atom.residue.name in STD_AA:
             keep_indices.append(atom.index)
     sub = t.atom_slice(keep_indices)
     out = CLEAN / "3p0g_clean.pdb"
     sub.save_pdb(str(out))
     print(f"  wrote {out}: {sub.n_atoms} atoms, {sub.n_residues} residues "
-          f"(chain B Nb80 + P0G dropped)")
+          f"(membrane-oriented; Nb80 + P0G + DUM dropped)")
     return out
 
 
